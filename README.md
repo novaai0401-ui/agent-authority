@@ -320,8 +320,35 @@ revocation propagation, audit retention, and consent/policy with a dashboard, an
 Cursor, Copilot, Gemini, GPT, or a custom surface). CI runs both test suites plus
 the interop check on Node 20/22 and Python 3.9/3.12.
 
-Deferred: deep multi-hop tuning, a Python control-plane client, and hardening of
-the hosted surface (auth, multi-tenant isolation, durable consent storage).
+The Python port has full parity: control-plane server + client, file
+persistence, shared rate limiting, and the consent provider.
+
+## Limitations & roadmap
+
+Honest about what this reference implementation does *not* yet do:
+
+- **Control-plane consent & policy are in-memory.** Revocation and audit can be
+  file-backed for durability, but consent records and policies are lost on
+  restart. Roadmap: pluggable durable stores for both.
+- **Single audit scope.** `GET /v1/audit` and the dashboard expose the whole
+  log to any holder of the (optional) bearer token — there is no per-tenant or
+  per-issuer scoping yet. Run one control plane per trust domain, or wait for
+  multi-tenant namespacing.
+- **Revocation/rate checks hit the network each call.** `HttpRevocationStore` and
+  `HttpRateStore` consult the control plane on every `authorize()`; there is no
+  client cache. Signature, scope, and expiry are still fully offline — only the
+  shared checks are remote. Roadmap: short-TTL caching with a staleness bound.
+- **Cross-language delegation is verify-only.** A mandate issued in one port
+  verifies/authorizes in the other, but attenuation needs the in-memory
+  delegation key, so delegate within the issuing port.
+- **Pure-Python Ed25519 is not constant-time.** The zero-dependency reference
+  signer is correct but not hardened against timing side-channels; use libsodium
+  for production Python deployments. (Node uses its native, hardened crypto.)
+- **Rate windows are sliding-count, not token-bucket**, and rejected attempts
+  are not counted — adequate for caps, not for burst shaping.
+
+None of these affect the core security properties (unforgeable, attenuation-only,
+offline-verifiable mandates); they are durability/scaling/hardening trade-offs.
 
 ## License
 
