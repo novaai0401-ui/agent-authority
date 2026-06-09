@@ -2,7 +2,14 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
-import { MemoryRevocationStore, MemoryAuditStore, type AuditStore, type RevocationStore } from "./store.js";
+import {
+  MemoryRevocationStore,
+  MemoryAuditStore,
+  MemoryRateStore,
+  type AuditStore,
+  type RevocationStore,
+  type RateStore,
+} from "./store.js";
 import type { AuditEntry, AuditFields } from "./types.js";
 
 /**
@@ -33,6 +40,7 @@ export interface ConsentRecord {
 export interface ControlPlaneOptions {
   revocations?: RevocationStore;
   audit?: AuditStore;
+  rate?: RateStore;
   /** If set, require `Authorization: Bearer <token>` on every request. */
   token?: string;
 }
@@ -48,6 +56,7 @@ export interface ControlPlane {
 export function createControlPlane(options: ControlPlaneOptions = {}): ControlPlane {
   const revocations = options.revocations ?? new MemoryRevocationStore();
   const audit = options.audit ?? new MemoryAuditStore();
+  const rate = options.rate ?? new MemoryRateStore();
   const consents = new Map<string, ConsentRecord>();
   const policies = new Map<string, unknown>();
   let server: Server | undefined;
@@ -110,6 +119,19 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     if (auditMatch) {
       const id = decodeURIComponent(auditMatch[1]);
       return send(res, 200, { entries: await audit.forMandate(id) });
+    }
+
+    // ---- Shared rate limiting ----
+    if (method === "POST" && path === "/v1/rate") {
+      const body = await readJson(req);
+      if (!body?.key) return send(res, 400, { error: "key required" });
+      const allowed = await rate.hit(
+        String(body.key),
+        Number(body.windowMs),
+        Number(body.limit),
+        Number(body.now ?? Date.now()),
+      );
+      return send(res, 200, { allowed });
     }
 
     // ---- Consent ----

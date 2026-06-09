@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createControlPlane } from "../src/control-plane.js";
-import { HttpRevocationStore, HttpAuditStore, ControlPlaneClient } from "../src/remote.js";
+import { HttpRevocationStore, HttpAuditStore, HttpRateStore, ControlPlaneClient } from "../src/remote.js";
 import { createBehalf } from "../src/behalf.js";
 import { newKeyPair } from "../src/crypto.js";
 import { AuthorizationError } from "../src/errors.js";
@@ -90,6 +90,27 @@ test("concurrent writers keep the central audit chain race-free and intact", asy
     );
     const { verify } = await import("../src/audit.js");
     assert.ok(verify(all).ok, "hash chain stays valid under concurrency");
+  });
+});
+
+test("rate limit is shared across agents via the control plane", async () => {
+  await withControlPlane(async (base) => {
+    const keyPair = newKeyPair();
+    // Two separate agent processes share the same mandate scope + control plane.
+    const agentA = createBehalf({ rootKeyPair: keyPair, rate: new HttpRateStore(base) });
+    const agentB = createBehalf({ rootKeyPair: keyPair, rate: new HttpRateStore(base) });
+
+    const mA = agentA.grant({ principal: "u", agent: "a", can: ["send:email rate<=3/h"], expiresIn: "1h" });
+    // B holds the SAME mandate (same id) — re-issued under the same key/scope.
+    const mB = agentB.import(mA.serialize());
+
+    // Combined budget is 3/h. A spends 2, B spends 1 → all allowed; the 4th denies.
+    await assert.doesNotReject(mA.authorize("send:email"));
+    await assert.doesNotReject(mA.authorize("send:email"));
+    await assert.doesNotReject(mB.authorize("send:email"));
+    await assert.rejects(() => mB.authorize("send:email"), AuthorizationError);
+    // ...and A is also blocked — the cap is genuinely shared, not per-process.
+    await assert.rejects(() => mA.authorize("send:email"), AuthorizationError);
   });
 });
 

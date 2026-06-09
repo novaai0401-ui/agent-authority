@@ -18,8 +18,10 @@ import { verify as verifyAudit } from "./audit.js";
 import {
   MemoryAuditStore,
   MemoryRevocationStore,
+  MemoryRateStore,
   type AuditStore,
   type RevocationStore,
+  type RateStore,
 } from "./store.js";
 import { Mandate, type Engine } from "./mandate.js";
 import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
@@ -41,6 +43,8 @@ export interface BehalfConfig {
   trust?: string[];
   revocations?: RevocationStore;
   audit?: AuditStore;
+  /** Rate-limit accounting. Use a shared store to enforce one cap across agents. */
+  rate?: RateStore;
   /** Override the clock — handy for tests. */
   now?: () => number;
 }
@@ -68,9 +72,8 @@ export class Behalf implements Engine {
   private readonly trusted: Set<string>;
   private readonly revocations: RevocationStore;
   private readonly auditStore: AuditStore;
+  private readonly rateStore: RateStore;
   private readonly now: () => number;
-  /** Sliding-window rate tracking: key -> sorted allow timestamps. */
-  private readonly rateHits = new Map<string, number[]>();
 
   constructor(config: BehalfConfig = {}) {
     this.rootKeyPair = config.rootKeyPair ?? newKeyPair();
@@ -78,6 +81,7 @@ export class Behalf implements Engine {
     this.trusted.add(exportPublicKey(this.rootKeyPair.publicKey));
     this.revocations = config.revocations ?? new MemoryRevocationStore();
     this.auditStore = config.audit ?? new MemoryAuditStore();
+    this.rateStore = config.rate ?? new MemoryRateStore();
     this.now = config.now ?? (() => Date.now());
   }
 
@@ -201,16 +205,13 @@ export class Behalf implements Engine {
       if (grant.rate) matched = grant;
     }
 
-    // 5. Rate limits (stateful, sliding window).
+    // 5. Rate limits (sliding window; shareable via the rate store).
     if (matched?.rate) {
       const key = `${chain[0]}|${request.verb}:${request.resource}`;
-      const win = windowMs(matched.rate.per);
-      const hits = (this.rateHits.get(key) ?? []).filter((t) => now - t < win);
-      if (hits.length + 1 > matched.rate.value) {
+      const allowed = await this.rateStore.hit(key, windowMs(matched.rate.per), matched.rate.value, now);
+      if (!allowed) {
         return deny(`rate limit exceeded (${matched.rate.value}/${matched.rate.per})`);
       }
-      hits.push(now);
-      this.rateHits.set(key, hits);
     }
 
     await this.auditStore.record({

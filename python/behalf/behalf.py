@@ -23,7 +23,9 @@ from .mandate import Mandate
 from .store import (
     AuditStore,
     MemoryAuditStore,
+    MemoryRateStore,
     MemoryRevocationStore,
+    RateStore,
     RevocationStore,
 )
 
@@ -61,6 +63,7 @@ class Behalf:
         trust: Optional[list[str]] = None,
         revocations: Optional[RevocationStore] = None,
         audit: Optional[AuditStore] = None,
+        rate: Optional[RateStore] = None,
         now: Optional[Callable[[], int]] = None,
     ) -> None:
         self._keys = root_key_pair or new_key_pair()
@@ -68,8 +71,8 @@ class Behalf:
         self._trusted.add(self._keys.public)
         self._revocations = revocations or MemoryRevocationStore()
         self._audit = audit or MemoryAuditStore()
+        self._rate = rate or MemoryRateStore()
         self._now = now or (lambda: int(time.time() * 1000))
-        self._rate_hits: dict[str, list[int]] = {}
 
     @property
     def public_key(self) -> str:
@@ -183,15 +186,12 @@ class Behalf:
             if grant.rate is not None:
                 matched = grant
 
-        # 5. Rate limits.
+        # 5. Rate limits (sliding window; shareable via the rate store).
         if matched is not None and matched.rate is not None:
             key = f"{chain[0]}|{request.verb}:{request.resource}"
-            win = cap.window_ms(matched.rate.per)
-            hits = [t for t in self._rate_hits.get(key, []) if now - t < win]
-            if len(hits) + 1 > matched.rate.value:
+            allowed = self._rate.hit(key, cap.window_ms(matched.rate.per), matched.rate.value, now)
+            if not allowed:
                 return deny(f"rate limit exceeded ({matched.rate.value:g}/{matched.rate.per})")
-            hits.append(now)
-            self._rate_hits[key] = hits
 
         self._audit.record(mandate_id=chain[-1], chain=chain, action=action, decision="allow")
 

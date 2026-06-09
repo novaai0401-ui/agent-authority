@@ -1,5 +1,5 @@
 import type { AuditEntry, AuditFields } from "./types.js";
-import type { AuditStore, RevocationStore } from "./store.js";
+import type { AuditStore, RevocationStore, RateStore } from "./store.js";
 
 /**
  * Client stores that back an engine with a remote {@link createControlPlane}.
@@ -78,6 +78,15 @@ export class HttpAuditStore extends RemoteBase implements AuditStore {
     return (
       await this.get<{ entries: AuditEntry[] }>(`/v1/audit/${encodeURIComponent(mandateId)}`)
     ).entries;
+  }
+}
+
+/** Rate limiting enforced centrally — one cap shared across all agents. */
+export class HttpRateStore extends RemoteBase implements RateStore {
+  async hit(key: string, windowMs: number, limit: number, now: number): Promise<boolean> {
+    return (
+      await this.post<{ allowed: boolean }>("/v1/rate", { key, windowMs, limit, now })
+    ).allowed;
   }
 }
 

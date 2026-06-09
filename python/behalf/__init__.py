@@ -31,11 +31,13 @@ from .errors import (
 from .mandate import Mandate
 from .persist import FileAuditStore, FileRevocationStore
 from .control_plane import ControlPlane, create_control_plane
-from .remote import ControlPlaneClient, HttpAuditStore, HttpRevocationStore
+from .remote import ControlPlaneClient, HttpAuditStore, HttpRateStore, HttpRevocationStore
 from .store import (
     AuditStore,
     MemoryAuditStore,
+    MemoryRateStore,
     MemoryRevocationStore,
+    RateStore,
     RevocationStore,
 )
 
@@ -60,13 +62,16 @@ __all__ = [
     "CapabilityParseError",
     "MemoryRevocationStore",
     "MemoryAuditStore",
+    "MemoryRateStore",
     "RevocationStore",
     "AuditStore",
+    "RateStore",
     "FileRevocationStore",
     "FileAuditStore",
     "ControlPlane",
     "create_control_plane",
     "HttpRevocationStore",
     "HttpAuditStore",
+    "HttpRateStore",
     "ControlPlaneClient",
 ]

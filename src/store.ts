@@ -11,6 +11,16 @@ export interface RevocationStore {
   isRevoked(id: string): Promise<boolean> | boolean;
 }
 
+export interface RateStore {
+  /**
+   * Atomically record a hit against `key` and report whether it falls within
+   * `limit` over the sliding `windowMs`. A rejected hit is NOT counted. Back it
+   * with a shared store (the control plane) to enforce one limit across every
+   * agent that holds the mandate — otherwise each process gets its own cap.
+   */
+  hit(key: string, windowMs: number, limit: number, now: number): Promise<boolean> | boolean;
+}
+
 export interface AuditStore {
   /**
    * Seal `fields` onto the chain and persist — the primary write path used by
@@ -32,6 +42,20 @@ export class MemoryRevocationStore implements RevocationStore {
   }
   isRevoked(id: string): boolean {
     return this.revoked.has(id);
+  }
+}
+
+export class MemoryRateStore implements RateStore {
+  private readonly hits = new Map<string, number[]>();
+  hit(key: string, windowMs: number, limit: number, now: number): boolean {
+    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length + 1 > limit) {
+      this.hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.hits.set(key, recent);
+    return true;
   }
 }
 

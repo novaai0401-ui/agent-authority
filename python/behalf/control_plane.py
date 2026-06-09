@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import unquote, urlparse
 
-from .store import MemoryAuditStore, MemoryRevocationStore
+from .store import MemoryAuditStore, MemoryRateStore, MemoryRevocationStore
 
 
 def _esc(s) -> str:
@@ -67,9 +67,10 @@ def _dashboard(revocations, audit, consents) -> str:
 
 
 class ControlPlane:
-    def __init__(self, *, revocations=None, audit=None, token: Optional[str] = None) -> None:
+    def __init__(self, *, revocations=None, audit=None, rate=None, token: Optional[str] = None) -> None:
         self.revocations = revocations or MemoryRevocationStore()
         self.audit = audit or MemoryAuditStore()
+        self.rate = rate or MemoryRateStore()
         self.token = token
         self.consents: dict = {}
         self.policies: dict = {}
@@ -199,6 +200,17 @@ class ControlPlane:
                     }
                     cp.consents[cid] = rec
                     return self._send(201, rec)
+                if path == "/v1/rate":
+                    if not body.get("key"):
+                        return self._send(400, {"error": "key required"})
+                    with cp._audit_lock:
+                        allowed = cp.rate.hit(
+                            body["key"],
+                            int(body.get("windowMs", 0)),
+                            float(body.get("limit", 0)),
+                            int(body.get("now", int(time.time() * 1000))),
+                        )
+                    return self._send(200, {"allowed": allowed})
                 m = re.match(r"^/v1/consent/([^/]+)/decision$", path)
                 if m:
                     rec = cp.consents.get(m.group(1))

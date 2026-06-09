@@ -42,8 +42,10 @@ export {
 export {
   MemoryRevocationStore,
   MemoryAuditStore,
+  MemoryRateStore,
   type RevocationStore,
   type AuditStore,
+  type RateStore,
 } from "./store.js";
 export { FileRevocationStore, FileAuditStore } from "./persist.js";
 export {
@@ -55,6 +57,7 @@ export {
 export {
   HttpRevocationStore,
   HttpAuditStore,
+  HttpRateStore,
   ControlPlaneClient,
   type RemoteOptions,
 } from "./remote.js";

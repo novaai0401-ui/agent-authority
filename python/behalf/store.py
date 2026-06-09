@@ -10,6 +10,10 @@ class RevocationStore(Protocol):
     def is_revoked(self, id: str) -> bool: ...
 
 
+class RateStore(Protocol):
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool: ...
+
+
 class AuditStore(Protocol):
     def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict: ...
     def append(self, entry: dict) -> None: ...
@@ -26,6 +30,20 @@ class MemoryRevocationStore:
 
     def is_revoked(self, id: str) -> bool:
         return id in self._revoked
+
+
+class MemoryRateStore:
+    def __init__(self) -> None:
+        self._hits: dict[str, list[int]] = {}
+
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        recent = [t for t in self._hits.get(key, []) if now - t < window_ms]
+        if len(recent) + 1 > limit:
+            self._hits[key] = recent
+            return False
+        recent.append(now)
+        self._hits[key] = recent
+        return True
 
 
 class MemoryAuditStore:

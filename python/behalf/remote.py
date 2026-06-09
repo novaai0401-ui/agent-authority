@@ -75,6 +75,17 @@ class HttpAuditStore(_Base):
         return self._get(f"/v1/audit/{quote(mandate_id, safe='')}")["entries"]
 
 
+class HttpRateStore(_Base):
+    """Rate limiting enforced centrally — one cap shared across all agents."""
+
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        return bool(
+            self._post(
+                "/v1/rate", {"key": key, "windowMs": window_ms, "limit": limit, "now": now}
+            )["allowed"]
+        )
+
+
 class ControlPlaneClient(_Base):
     """Typed client for the consent + policy endpoints."""
 

@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 72 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 73 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -255,13 +255,15 @@ node dist/control-plane.js     # bin: behalf-control-plane; dashboard at /
 
 ```ts
 import { createBehalf } from "behalf";
-import { HttpRevocationStore, HttpAuditStore } from "behalf/remote";
+import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "behalf/remote";
 
 const behalf = createBehalf({
   revocations: new HttpRevocationStore("http://localhost:8787"),
   audit: new HttpAuditStore("http://localhost:8787"),
+  rate: new HttpRateStore("http://localhost:8787"),
 });
-// behalf.revoke(id) now propagates to every agent on the same control plane.
+// revoke(id) propagates to every agent; audit is sealed centrally (race-free);
+// and a `rate<=N/h` cap is enforced ONCE across all agents, not per process.
 ```
 
 ### Cross-language interop
@@ -282,7 +284,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 45 tests, zero dependencies
+python3 -m unittest discover -s tests   # 46 tests, zero dependencies
 ```
 
 ```python

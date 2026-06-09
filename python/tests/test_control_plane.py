@@ -11,7 +11,12 @@ from behalf.audit import verify  # noqa: E402
 from behalf.control_plane import create_control_plane  # noqa: E402
 from behalf.crypto import new_key_pair  # noqa: E402
 from behalf.errors import AuthorizationError  # noqa: E402
-from behalf.remote import ControlPlaneClient, HttpAuditStore, HttpRevocationStore  # noqa: E402
+from behalf.remote import (  # noqa: E402
+    ControlPlaneClient,
+    HttpAuditStore,
+    HttpRateStore,
+    HttpRevocationStore,
+)
 
 
 class ControlPlaneTests(unittest.TestCase):
@@ -76,6 +81,21 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(len(all_entries), 20)
         self.assertEqual(sorted(e["seq"] for e in all_entries), list(range(20)))
         self.assertTrue(verify(all_entries)["ok"])
+
+    def test_rate_limit_shared_across_agents(self):
+        kp = new_key_pair()
+        a = create_behalf(root_key_pair=kp, rate=HttpRateStore(self.base))
+        b = create_behalf(root_key_pair=kp, rate=HttpRateStore(self.base))
+        m_a = a.grant(principal="u", agent="a", can=["send:email rate<=3/h"], expires_in="1h")
+        m_b = b.import_(m_a.serialize())
+
+        m_a.authorize("send:email")
+        m_a.authorize("send:email")
+        m_b.authorize("send:email")
+        with self.assertRaises(AuthorizationError):
+            m_b.authorize("send:email")
+        with self.assertRaises(AuthorizationError):
+            m_a.authorize("send:email")  # cap is shared, not per-process
 
     def test_consent_flow(self):
         client = ControlPlaneClient(self.base)
