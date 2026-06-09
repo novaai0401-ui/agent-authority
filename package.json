@@ -4,6 +4,19 @@
   "description": "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs.",
   "type": "module",
   "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/novaai0401-ui/agent-authority.git"
+  },
+  "homepage": "https://github.com/novaai0401-ui/agent-authority#readme",
+  "bugs": {
+    "url": "https://github.com/novaai0401-ui/agent-authority/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "keywords": [
     "agent",
     "authority",
@@ -19,7 +32,8 @@
     "dist",
     "schemas",
     "llms.txt",
-    "QUICKSTART.md"
+    "QUICKSTART.md",
+    "CHANGELOG.md"
   ],
   "bin": {
     "behalf": "./dist/cli.js",
@@ -58,6 +72,7 @@
     "test": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
     "test:interop": "npm run build && node scripts/interop.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm test",
     "example:data-access": "node dist-test/examples/data-access-agent.js",
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
     "example:delegation": "node dist-test/examples/two-agent-delegation.js",
