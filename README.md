@@ -291,7 +291,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 54 tests, zero dependencies
+python3 -m unittest discover -s tests   # 64 tests, zero dependencies
 ```
 
 ```python
@@ -330,8 +330,9 @@ the interop check on Node 20/22 and Python 3.9/3.12.
 All control-plane state can be file-backed for durability — revocation, audit,
 and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
 `behalf-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
-port has full parity: control-plane server + client, file persistence, shared
-rate limiting, and the consent provider.
+port has full parity: not just the library and control plane, but the tooling
+too — the `behalf` CLI, the `behalf-mcp` stdio server, and the quickstart
+generator (`python -m behalf.cli`, or the console scripts after `pip install`).
 
 ## Limitations & roadmap
 

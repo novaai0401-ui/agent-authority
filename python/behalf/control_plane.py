@@ -290,6 +290,35 @@ class ControlPlane:
         return Handler
 
 
+def main() -> None:
+    """Run a durable, file-backed control plane (the behalf-control-plane bin).
+
+    PORT and BEHALF_HOME are read from the environment; blocks until interrupted.
+    """
+    import os
+    import time as _time
+
+    from .persist import FileAuditStore, FileConsentStore, FilePolicyStore, FileRevocationStore
+
+    home = os.environ.get("BEHALF_HOME") or os.path.join(os.path.expanduser("~"), ".behalf")
+    os.makedirs(home, exist_ok=True)
+    port = int(os.environ.get("PORT", "8787"))
+    cp = create_control_plane(
+        revocations=FileRevocationStore(os.path.join(home, "revocations.json")),
+        audit=FileAuditStore(os.path.join(home, "audit.jsonl")),
+        consents=FileConsentStore(os.path.join(home, "consents.json")),
+        policies=FilePolicyStore(os.path.join(home, "policies.json")),
+        token=os.environ.get("BEHALF_TOKEN"),
+    )
+    bound = cp.listen(port)
+    print(f"behalf control plane listening on http://127.0.0.1:{bound}  (dashboard at /)", file=__import__("sys").stderr)
+    try:
+        while True:
+            _time.sleep(3600)
+    except KeyboardInterrupt:
+        cp.close()
+
+
 def create_control_plane(
     *,
     revocations=None,
