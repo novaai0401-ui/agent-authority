@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://behalf.dev/schemas/mandate.schema.json",
+  "title": "Behalf Mandate Token",
+  "description": "The wire form of a Mandate: a signed, scoped, time-bound capability token. Macaroon-style: a root identifier plus ordered caveats bound by an HMAC chain. Holders may append narrowing caveats (attenuation) but can never widen.",
+  "type": "object",
+  "required": ["v", "id", "caveats", "sig"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1, "description": "Token format version." },
+    "id": {
+      "type": "string",
+      "description": "Root identifier, stable across the whole delegation chain."
+    },
+    "caveats": {
+      "type": "array",
+      "description": "Ordered restrictions; root grant first, narrowings appended.",
+      "items": { "$ref": "#/$defs/caveat" }
+    },
+    "sig": {
+      "type": "string",
+      "pattern": "^[0-9a-f]+$",
+      "description": "HMAC chain signature over (id, caveats...). Hex."
+    }
+  },
+  "$defs": {
+    "caveat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["t", "principal"],
+          "additionalProperties": false,
+          "properties": { "t": { "const": "principal" }, "principal": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["t", "agent"],
+          "additionalProperties": false,
+          "properties": { "t": { "const": "agent" }, "agent": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["t", "can"],
+          "additionalProperties": false,
+          "properties": {
+            "t": { "const": "cap" },
+            "can": {
+              "type": "array",
+              "items": { "$ref": "https://behalf.dev/schemas/capability.schema.json" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["t", "at"],
+          "additionalProperties": false,
+          "properties": { "t": { "const": "expires" }, "at": { "type": "integer", "description": "Expiry, ms since epoch." } }
+        },
+        {
+          "type": "object",
+          "required": ["t", "id"],
+          "additionalProperties": false,
+          "properties": { "t": { "const": "id" }, "id": { "type": "string" } }
+        }
+      ]
+    }
+  }
+}

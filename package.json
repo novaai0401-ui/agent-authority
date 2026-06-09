@@ -1,0 +1,53 @@
+{
+  "name": "behalf",
+  "version": "0.1.0",
+  "description": "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "authority",
+    "delegation",
+    "capability",
+    "mandate",
+    "mcp",
+    "a2a",
+    "authorization",
+    "ai"
+  ],
+  "files": [
+    "dist",
+    "schemas",
+    "llms.txt"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    },
+    "./a2a": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    },
+    "./llms.txt": "./llms.txt"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "example:data-access": "node dist-test/examples/data-access-agent.js",
+    "example:spend": "node dist-test/examples/spend-limited-agent.js",
+    "example:delegation": "node dist-test/examples/two-agent-delegation.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "typescript": "^5.4.0"
+  }
+}
