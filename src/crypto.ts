@@ -1,53 +1,82 @@
-import { createHmac, createHash, randomBytes, randomUUID } from "node:crypto";
-import type { Caveat } from "./types.js";
+import {
+  generateKeyPairSync,
+  sign as edSign,
+  verify as edVerify,
+  createHash,
+  createPublicKey,
+  createPrivateKey,
+  randomUUID,
+  type KeyObject,
+} from "node:crypto";
+import type { Block } from "./types.js";
 
 /**
- * Macaroon-style HMAC chaining.
+ * Asymmetric attenuable tokens (biscuit-style Ed25519 signature chain).
  *
- *   sig_0 = HMAC(rootKey, identifier)
- *   sig_i = HMAC(sig_{i-1}, serialize(caveat_i))
+ * The token is an ordered list of blocks. Block 0 (the root grant) is signed by
+ * the issuer's private key. Every block also publishes a fresh public key
+ * (`nextPub`); the *next* block is signed by the matching private key. So:
  *
- * The crucial property: appending a caveat only needs the *previous* signature,
- * not the root key — so a holder can attenuate offline and keylessly, yet can
- * never remove or reorder an earlier caveat (that would change the chain). This
- * is what structurally closes the OAuth "delegation-chain splicing" weakness.
+ *   sig[0]  = sign(rootPriv,        canonical(block[0]))   verify with rootPub
+ *   sig[i]  = sign(block[i-1].next, canonical(block[i]))   verify with block[i-1].nextPub
+ *
+ * Consequences:
+ *  - Verification needs only PUBLIC keys — any relying party can check a mandate
+ *    and its whole chain offline, without the issuer's secret.
+ *  - A holder attenuates by appending a block signed with the private key it was
+ *    handed; it never needs the issuer key.
+ *  - A block cannot be removed (the next block's signer key was published inside
+ *    it) and the root grant cannot be edited (root signature). Widening is
+ *    impossible because every block's caveats are intersected at authorize time.
  */
-export function chainSignature(
-  rootKey: Buffer,
-  identifier: string,
-  caveats: Caveat[],
-): string {
-  let sig: Buffer = hmac(rootKey, identifier);
-  for (const c of caveats) {
-    sig = hmac(sig, serializeCaveat(c));
+
+export interface KeyPair {
+  publicKey: KeyObject;
+  privateKey: KeyObject;
+}
+
+export function newKeyPair(): KeyPair {
+  return generateKeyPairSync("ed25519");
+}
+
+/** Canonical, deterministic bytes for a block (what gets signed/verified). */
+export function canonicalBlock(block: Block): string {
+  return JSON.stringify({ caveats: block.caveats, nextPub: block.nextPub });
+}
+
+export function signBlock(privateKey: KeyObject, block: Block): string {
+  return edSign(null, Buffer.from(canonicalBlock(block), "utf8"), privateKey).toString(
+    "base64url",
+  );
+}
+
+export function verifyBlock(publicKey: KeyObject, block: Block, sig: string): boolean {
+  try {
+    return edVerify(
+      null,
+      Buffer.from(canonicalBlock(block), "utf8"),
+      publicKey,
+      Buffer.from(sig, "base64url"),
+    );
+  } catch {
+    return false;
   }
-  return sig.toString("hex");
 }
 
-/** Extend an existing signature with one more caveat (the attenuation step). */
-export function extendSignature(prevSig: string, caveat: Caveat): string {
-  return hmac(Buffer.from(prevSig, "hex"), serializeCaveat(caveat)).toString("hex");
+export function exportPublicKey(key: KeyObject): string {
+  return key.export({ type: "spki", format: "der" }).toString("base64url");
 }
 
-/** Deterministic, canonical serialization of a caveat for hashing. */
-export function serializeCaveat(c: Caveat): string {
-  switch (c.t) {
-    case "principal":
-      return `principal=${c.principal}`;
-    case "agent":
-      return `agent=${c.agent}`;
-    case "cap":
-      // Sort so the same set always hashes identically.
-      return `cap=${[...c.can].sort().join(",")}`;
-    case "expires":
-      return `expires=${c.at}`;
-    case "id":
-      return `id=${c.id}`;
-  }
+export function importPublicKey(b64: string): KeyObject {
+  return createPublicKey({ key: Buffer.from(b64, "base64url"), type: "spki", format: "der" });
 }
 
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
+export function exportPrivateKey(key: KeyObject): string {
+  return key.export({ type: "pkcs8", format: "der" }).toString("base64url");
+}
+
+export function importPrivateKey(b64: string): KeyObject {
+  return createPrivateKey({ key: Buffer.from(b64, "base64url"), type: "pkcs8", format: "der" });
 }
 
 export function sha256Hex(data: string): string {
@@ -56,8 +85,4 @@ export function sha256Hex(data: string): string {
 
 export function newId(): string {
   return randomUUID();
-}
-
-export function newRootKey(): Buffer {
-  return randomBytes(32);
 }

@@ -45,7 +45,8 @@ test("a tampered token fails signature verification", async () => {
 
   // Forge a wider scope by editing the cap caveat in place.
   const forged = structuredClone(m.token);
-  for (const c of forged.caveats) if (c.t === "cap") c.can = ["*"];
+  for (const block of forged.blocks)
+    for (const c of block.caveats) if (c.t === "cap") c.can = ["*"];
   assert.throws(() => b.verifySignature(forged), IntegrityError);
 
   // And authorize denies it rather than honoring the forgery.

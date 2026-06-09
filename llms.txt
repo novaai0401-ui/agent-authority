@@ -74,9 +74,40 @@ grant's `spend:usd<=50`.
 - `attenuate()` only ever narrows. Requesting a wider scope throws `WideningError`.
 - Effective authority = the principal's grant ∩ every narrowing along the chain.
   A compromised middle agent can never widen scope.
-- Verification is offline (signature + scope + expiry). Only revocation may need
-  a network check.
+- Verification is offline and asymmetric: any party can verify a mandate + its
+  whole chain with only the issuer's PUBLIC key (Ed25519 signature chain). Only
+  revocation may need a network check.
+- A mandate restored with `import()` can be verified/authorized/audited but NOT
+  attenuated (it carries no delegation key). Attenuate the live in-memory mandate.
 - Prefer short `expiresIn`. Prefer the tightest `can` that still does the job.
+
+## Offline third-party verification
+
+```ts
+const verifier = createBehalf({ trust: [issuerPublicKey] }); // no secret
+await verifier.import(serializedMandate).authorize("spend:usd=20");
+```
+
+## CLI
+
+```
+behalf pubkey
+behalf grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
+behalf inspect <mandate>
+behalf authorize <mandate> <action>
+behalf revoke <mandate-id>
+behalf audit <mandate-id>
+```
+
+## Standalone MCP server
+
+`node dist/mcp-server.js` (bin: `behalf-mcp`) speaks JSON-RPC 2.0 over stdio and
+exposes request_mandate / present_mandate / check_authority to any MCP client.
+
+## Persistence
+
+`FileRevocationStore(path)` and `FileAuditStore(path)` persist revocation and the
+tamper-evident audit log across restarts; pass them to `createBehalf({...})`.
 
 ## Discovery tools (MCP)
 

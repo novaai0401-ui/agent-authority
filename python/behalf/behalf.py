@@ -1,4 +1,4 @@
-"""The Behalf engine: holds the signing key and stores, implements the five verbs."""
+"""The Behalf engine: holds the issuer keypair and stores, implements five verbs."""
 
 from __future__ import annotations
 
@@ -10,8 +10,15 @@ from typing import Callable, Optional
 
 from . import audit as audit_mod
 from . import capability as cap
-from .crypto import chain_signature, extend_signature, new_id, new_root_key
-from .errors import AuthorizationError, IntegrityError, WideningError
+from .crypto import (
+    KeyPair,
+    new_id,
+    new_key_pair,
+    public_of,
+    sign_block,
+    verify_block,
+)
+from .errors import AuthorizationError, BehalfError, IntegrityError, WideningError
 from .mandate import Mandate
 from .store import (
     AuditStore,
@@ -33,6 +40,15 @@ def _to_ms(d: str | int | float) -> int:
     return int(float(m.group(1)) * _DURATION_MS[m.group(2)])
 
 
+class DelegationError(BehalfError):
+    """Raised when attenuating a mandate that has no in-memory delegation key."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "this mandate cannot be delegated (it was imported without its delegation key)"
+        )
+
+
 class Behalf:
     """The five-verb engine. Use ``create_behalf()`` or the classmethod facade."""
 
@@ -41,69 +57,83 @@ class Behalf:
     def __init__(
         self,
         *,
-        root_key: Optional[bytes] = None,
+        root_key_pair: Optional[KeyPair] = None,
+        trust: Optional[list[str]] = None,
         revocations: Optional[RevocationStore] = None,
         audit: Optional[AuditStore] = None,
         now: Optional[Callable[[], int]] = None,
     ) -> None:
-        self._root_key = root_key or new_root_key()
+        self._keys = root_key_pair or new_key_pair()
+        self._trusted: set[str] = set(trust or [])
+        self._trusted.add(self._keys.public)
         self._revocations = revocations or MemoryRevocationStore()
         self._audit = audit or MemoryAuditStore()
         self._now = now or (lambda: int(time.time() * 1000))
         self._rate_hits: dict[str, list[int]] = {}
 
+    @property
+    def public_key(self) -> str:
+        """This engine's issuer public key (base64url). Share it with verifiers."""
+        return self._keys.public
+
     # ---- the five verbs ----
 
     def grant(self, *, principal: str, agent: str, can: list[str], expires_in: str | int) -> Mandate:
-        """GRANT — a principal authorizes an agent: scoped, capped, short-lived."""
         ident = new_id()
-        caveats = [
-            {"t": "principal", "principal": principal},
-            {"t": "agent", "agent": agent},
-            {"t": "cap", "can": list(can)},
-            {"t": "expires", "at": self._now() + _to_ms(expires_in)},
-        ]
-        sig = chain_signature(self._root_key, ident, caveats)
-        return Mandate({"v": 1, "id": ident, "caveats": caveats, "sig": sig}, self)
+        nxt = new_key_pair()
+        block = {
+            "caveats": [
+                {"t": "principal", "principal": principal},
+                {"t": "agent", "agent": agent},
+                {"t": "cap", "can": list(can)},
+                {"t": "expires", "at": self._now() + _to_ms(expires_in)},
+            ],
+            "nextPub": nxt.public,
+        }
+        sig = sign_block(self._keys.private, block)
+        token = {"v": 2, "id": ident, "blocks": [block], "sigs": [sig], "rootPub": self._keys.public}
+        return Mandate(token, self, nxt.private)
 
     def attenuate(
         self,
         token: dict,
+        delegation_key: Optional[str],
         *,
         can: Optional[list[str]] = None,
         expires_in: Optional[str | int] = None,
         agent: Optional[str] = None,
     ) -> Mandate:
-        """ATTENUATE — narrow a mandate for a sub-agent. Never widens."""
+        if delegation_key is None:
+            raise DelegationError()
         self.verify_signature(token)
-        parent_cans = _caps_from_token(token)
-        added: list[dict] = []
 
+        parent_cans = _caps_from_token(token)
+        caveats: list[dict] = []
         if can is not None:
             ok, offending = cap.is_narrowing(parent_cans, can)
             if not ok:
                 raise WideningError(offending)
-            added.append({"t": "cap", "can": list(can)})
+            caveats.append({"t": "cap", "can": list(can)})
         if expires_in is not None:
-            added.append({"t": "expires", "at": self._now() + _to_ms(expires_in)})
+            caveats.append({"t": "expires", "at": self._now() + _to_ms(expires_in)})
         if agent is not None:
-            added.append({"t": "agent", "agent": agent})
-        added.append({"t": "id", "id": new_id()})
+            caveats.append({"t": "agent", "agent": agent})
+        caveats.append({"t": "id", "id": new_id()})
 
-        sig = token["sig"]
-        for c in added:
-            sig = extend_signature(sig, c)
+        nxt = new_key_pair()
+        block = {"caveats": caveats, "nextPub": nxt.public}
+        sig = sign_block(delegation_key, block)
 
         new_token = {
-            "v": 1,
+            "v": 2,
             "id": token["id"],
-            "caveats": [*token["caveats"], *added],
-            "sig": sig,
+            "blocks": [*token["blocks"], block],
+            "sigs": [*token["sigs"], sig],
+            "rootPub": token["rootPub"],
         }
-        return Mandate(new_token, self)
+        return Mandate(new_token, self, nxt.private)
 
     def authorize(self, token: dict, action: str) -> None:
-        """AUTHORIZE — verify a token then check a concrete action against it."""
         chain = _chain_ids(token)
 
         def deny(reason: str) -> None:
@@ -117,30 +147,32 @@ class Behalf:
             )
             raise AuthorizationError(action, reason)
 
-        # 1. Signature integrity (offline).
+        # 1. Signature chain integrity (offline, public-key only).
         try:
             self.verify_signature(token)
-        except IntegrityError:
-            return deny("invalid signature")
+        except IntegrityError as e:
+            return deny(str(e))
 
         # 2. Revocation.
         for cid in chain:
             if self._revocations.is_revoked(cid):
                 return deny(f"revoked ({cid})")
 
+        caveats = _all_caveats(token)
+
         # 3. Expiry.
         now = self._now()
-        for c in token["caveats"]:
+        for c in caveats:
             if c["t"] == "expires" and now > c["at"]:
                 return deny("expired")
 
         # 4. Scope: action must satisfy EVERY cap caveat (the intersection).
         try:
             request = cap.parse(action)
-        except Exception as e:  # noqa: BLE001 - surface parse detail
+        except Exception as e:  # noqa: BLE001
             return deny(str(e))
         matched = None
-        for c in token["caveats"]:
+        for c in caveats:
             if c["t"] != "cap":
                 continue
             grant = next(
@@ -152,7 +184,7 @@ class Behalf:
             if grant.rate is not None:
                 matched = grant
 
-        # 5. Rate limits (sliding window).
+        # 5. Rate limits.
         if matched is not None and matched.rate is not None:
             key = f"{chain[0]}|{request.verb}:{request.resource}"
             win = cap.window_ms(matched.rate.per)
@@ -163,19 +195,13 @@ class Behalf:
             self._rate_hits[key] = hits
 
         audit_mod.record(
-            self._audit,
-            mandate_id=chain[-1],
-            chain=chain,
-            action=action,
-            decision="allow",
+            self._audit, mandate_id=chain[-1], chain=chain, action=action, decision="allow"
         )
 
     def revoke(self, id: str) -> None:
-        """REVOKE — kill a mandate (and everything downstream)."""
         self._revocations.revoke(id)
 
     def audit(self, id: str) -> list[dict]:
-        """AUDIT — fetch the tamper-evident trail for a mandate's chain."""
         return self._audit.for_mandate(id)
 
     # ---- helpers ----
@@ -189,11 +215,19 @@ class Behalf:
         return Mandate(json.loads(raw), self)
 
     def verify_signature(self, token: dict) -> None:
-        expected = chain_signature(self._root_key, token["id"], token["caveats"])
-        if expected != token["sig"]:
-            raise IntegrityError()
+        if token.get("v") != 2:
+            raise IntegrityError(f"unsupported token version {token.get('v')}")
+        if token["rootPub"] not in self._trusted:
+            raise IntegrityError("untrusted issuer")
+        if len(token["blocks"]) != len(token["sigs"]):
+            raise IntegrityError("malformed token")
+        signer = token["rootPub"]
+        for i, block in enumerate(token["blocks"]):
+            if not verify_block(signer, block, token["sigs"][i]):
+                raise IntegrityError(f"signature failed at block {i}")
+            signer = block["nextPub"]
 
-    # ---- static facade over a lazily-created default instance ----
+    # ---- static facade ----
 
     @classmethod
     def default(cls) -> "Behalf":
@@ -208,21 +242,27 @@ class Behalf:
 
 
 def create_behalf(**config) -> Behalf:
-    """Construct an isolated engine (own key + stores)."""
     return Behalf(**config)
 
 
 def _chain_ids(token: dict) -> list[str]:
     ids = [token["id"]]
-    for c in token["caveats"]:
+    for c in _all_caveats(token):
         if c["t"] == "id":
             ids.append(c["id"])
     return ids
 
 
+def _all_caveats(token: dict) -> list[dict]:
+    out: list[dict] = []
+    for block in token["blocks"]:
+        out.extend(block["caveats"])
+    return out
+
+
 def _caps_from_token(token: dict) -> list[str]:
     latest: list[str] = []
-    for c in token["caveats"]:
+    for c in _all_caveats(token):
         if c["t"] == "cap":
             latest = c["can"]
     return latest

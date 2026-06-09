@@ -18,8 +18,21 @@
  *   const trail = await Behalf.audit(mandate.id);      // 5. AUDIT
  */
 
-export { Behalf, createBehalf, type BehalfConfig } from "./behalf.js";
+export {
+  Behalf,
+  createBehalf,
+  BehalfDelegationError,
+  type BehalfConfig,
+} from "./behalf.js";
 export { Mandate } from "./mandate.js";
+export {
+  newKeyPair,
+  exportPublicKey,
+  importPublicKey,
+  exportPrivateKey,
+  importPrivateKey,
+  type KeyPair,
+} from "./crypto.js";
 export {
   parse as parseCapability,
   permits,
@@ -32,6 +45,7 @@ export {
   type RevocationStore,
   type AuditStore,
 } from "./store.js";
+export { FileRevocationStore, FileAuditStore } from "./persist.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export {
   BehalfError,
@@ -42,6 +56,7 @@ export {
 } from "./errors.js";
 export type {
   Caveat,
+  Block,
   MandateToken,
   GrantOptions,
   AttenuateOptions,

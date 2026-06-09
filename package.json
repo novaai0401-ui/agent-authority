@@ -20,6 +20,10 @@
     "schemas",
     "llms.txt"
   ],
+  "bin": {
+    "behalf": "./dist/cli.js",
+    "behalf-mcp": "./dist/mcp-server.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -32,6 +36,10 @@
     "./a2a": {
       "types": "./dist/mcp.d.ts",
       "import": "./dist/mcp.js"
+    },
+    "./server": {
+      "types": "./dist/mcp-server.d.ts",
+      "import": "./dist/mcp-server.js"
     },
     "./llms.txt": "./llms.txt"
   },

@@ -1,8 +1,11 @@
 import {
-  chainSignature,
-  extendSignature,
+  newKeyPair,
   newId,
-  newRootKey,
+  signBlock,
+  verifyBlock,
+  exportPublicKey,
+  importPublicKey,
+  type KeyPair,
 } from "./crypto.js";
 import {
   parse,
@@ -19,23 +22,23 @@ import {
   type RevocationStore,
 } from "./store.js";
 import { Mandate, type Engine } from "./mandate.js";
-import {
-  AuthorizationError,
-  IntegrityError,
-  WideningError,
-} from "./errors.js";
+import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
 import type {
   AttenuateOptions,
   AuditEntry,
   AuditIntegrity,
+  Block,
   Caveat,
   GrantOptions,
   MandateToken,
 } from "./types.js";
+import type { KeyObject } from "node:crypto";
 
 export interface BehalfConfig {
-  /** Root signing key. Auto-generated (in-memory) if omitted. */
-  rootKey?: Buffer;
+  /** Issuer keypair. Auto-generated if omitted (so the engine can grant). */
+  rootKeyPair?: KeyPair;
+  /** Additional trusted issuer public keys (base64url SPKI) for foreign mandates. */
+  trust?: string[];
   revocations?: RevocationStore;
   audit?: AuditStore;
   /** Override the clock — handy for tests. */
@@ -49,30 +52,20 @@ function toMs(d: string | number): number {
   const m = DURATION_RE.exec(d.trim());
   if (!m) throw new Error(`invalid duration "${d}" (use e.g. "1h", "10m", "30s")`);
   const n = Number(m[1]);
-  switch (m[2]) {
-    case "ms":
-      return n;
-    case "s":
-      return n * 1000;
-    case "m":
-      return n * 60_000;
-    case "h":
-      return n * 3_600_000;
-    case "d":
-      return n * 86_400_000;
-    default:
-      return n;
-  }
+  const unit: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return n * unit[m[2]];
 }
 
 /**
- * The Behalf engine: holds the signing key and the revocation / audit stores,
+ * The Behalf engine: holds the issuer keypair and the revocation / audit stores,
  * and implements the five verbs. Use the default singleton via the static
  * facade (`Behalf.grant`, ...) or construct an isolated instance with
- * `createBehalf()`.
+ * `createBehalf()`. A verify-only engine (no grant) is made with
+ * `createBehalf({ trust: [issuerPublicKey] })` and a generated throwaway key.
  */
 export class Behalf implements Engine {
-  private readonly rootKey: Buffer;
+  private readonly rootKeyPair: KeyPair;
+  private readonly trusted: Set<string>;
   private readonly revocations: RevocationStore;
   private readonly auditStore: AuditStore;
   private readonly now: () => number;
@@ -80,54 +73,83 @@ export class Behalf implements Engine {
   private readonly rateHits = new Map<string, number[]>();
 
   constructor(config: BehalfConfig = {}) {
-    this.rootKey = config.rootKey ?? newRootKey();
+    this.rootKeyPair = config.rootKeyPair ?? newKeyPair();
+    this.trusted = new Set(config.trust ?? []);
+    this.trusted.add(exportPublicKey(this.rootKeyPair.publicKey));
     this.revocations = config.revocations ?? new MemoryRevocationStore();
     this.auditStore = config.audit ?? new MemoryAuditStore();
     this.now = config.now ?? (() => Date.now());
   }
 
+  /** This engine's issuer public key (base64url SPKI). Share it with verifiers. */
+  get publicKey(): string {
+    return exportPublicKey(this.rootKeyPair.publicKey);
+  }
+
   /** GRANT — a principal authorizes an agent: scoped, capped, short-lived. */
   grant(opts: GrantOptions): Mandate {
     const id = newId();
-    const caveats: Caveat[] = [
-      { t: "principal", principal: opts.principal },
-      { t: "agent", agent: opts.agent },
-      { t: "cap", can: opts.can },
-      { t: "expires", at: this.now() + toMs(opts.expiresIn) },
-    ];
-    const sig = chainSignature(this.rootKey, id, caveats);
-    return new Mandate({ v: 1, id, caveats, sig }, this);
+    const next = newKeyPair();
+    const block: Block = {
+      caveats: [
+        { t: "principal", principal: opts.principal },
+        { t: "agent", agent: opts.agent },
+        { t: "cap", can: opts.can },
+        { t: "expires", at: this.now() + toMs(opts.expiresIn) },
+      ],
+      nextPub: exportPublicKey(next.publicKey),
+    };
+    const sig = signBlock(this.rootKeyPair.privateKey, block);
+    const token: MandateToken = {
+      v: 2,
+      id,
+      blocks: [block],
+      sigs: [sig],
+      rootPub: this.publicKey,
+    };
+    return new Mandate(token, this, next.privateKey);
   }
 
   /** ATTENUATE — narrow a mandate for a sub-agent. Never widens. */
-  attenuate(token: MandateToken, opts: AttenuateOptions): Mandate {
+  attenuate(
+    token: MandateToken,
+    delegationKey: KeyObject | undefined,
+    opts: AttenuateOptions,
+  ): Mandate {
+    if (!delegationKey) {
+      throw new BehalfDelegationError();
+    }
     this.verifySignature(token);
 
     const parentCans = capsFromToken(token);
-    const added: Caveat[] = [];
-
+    const caveats: Caveat[] = [];
     if (opts.can) {
       const check = isNarrowing(parentCans, opts.can);
       if (!check.ok) throw new WideningError(check.offending!);
-      added.push({ t: "cap", can: opts.can });
+      caveats.push({ t: "cap", can: opts.can });
     }
     if (opts.expiresIn !== undefined) {
-      added.push({ t: "expires", at: this.now() + toMs(opts.expiresIn) });
+      caveats.push({ t: "expires", at: this.now() + toMs(opts.expiresIn) });
     }
     if (opts.agent) {
-      added.push({ t: "agent", agent: opts.agent });
+      caveats.push({ t: "agent", agent: opts.agent });
     }
     // A fresh id makes this link individually revocable; it stays downstream of
     // the parent, so revoking the parent still kills it.
-    added.push({ t: "id", id: newId() });
+    caveats.push({ t: "id", id: newId() });
 
-    let sig = token.sig;
-    for (const c of added) sig = extendSignature(sig, c);
+    const next = newKeyPair();
+    const block: Block = { caveats, nextPub: exportPublicKey(next.publicKey) };
+    const sig = signBlock(delegationKey, block);
 
-    return new Mandate(
-      { v: 1, id: token.id, caveats: [...token.caveats, ...added], sig },
-      this,
-    );
+    const newToken: MandateToken = {
+      v: 2,
+      id: token.id,
+      blocks: [...token.blocks, block],
+      sigs: [...token.sigs, sig],
+      rootPub: token.rootPub,
+    };
+    return new Mandate(newToken, this, next.privateKey);
   }
 
   /** AUTHORIZE — verify a token then check a concrete action against it. */
@@ -144,26 +166,24 @@ export class Behalf implements Engine {
       throw new AuthorizationError(action, reason);
     };
 
-    // 1. Signature integrity (offline, no network).
+    // 1. Signature chain integrity (offline, public-key only).
     try {
       this.verifySignature(token);
-    } catch {
-      return deny("invalid signature");
+    } catch (e) {
+      return deny(e instanceof IntegrityError ? e.message : "invalid signature");
     }
 
     // 2. Revocation: this mandate or any ancestor.
     for (const id of chain) {
-      if (await this.revocations.isRevoked(id)) {
-        return deny(`revoked (${id})`);
-      }
+      if (await this.revocations.isRevoked(id)) return deny(`revoked (${id})`);
     }
+
+    const caveats = allCaveats(token);
 
     // 3. Expiry: earliest expires caveat wins.
     const now = this.now();
-    for (const c of token.caveats) {
-      if (c.t === "expires" && now > c.at) {
-        return deny("expired");
-      }
+    for (const c of caveats) {
+      if (c.t === "expires" && now > c.at) return deny("expired");
     }
 
     // 4. Scope: the action must satisfy EVERY cap caveat (the intersection).
@@ -174,11 +194,10 @@ export class Behalf implements Engine {
       return deny((e as Error).message);
     }
     let matched: Capability | undefined;
-    for (const c of token.caveats) {
+    for (const c of caveats) {
       if (c.t !== "cap") continue;
       const grant = c.can.map(parse).find((g) => satisfies(g, request));
       if (!grant) return deny(`"${action}" not within granted scope`);
-      // Remember the tightest grant that carries a rate limit, for step 5.
       if (grant.rate) matched = grant;
     }
 
@@ -194,7 +213,6 @@ export class Behalf implements Engine {
       this.rateHits.set(key, hits);
     }
 
-    // Allowed — write the tamper-evident record.
     await record(this.auditStore, {
       mandateId: chain[chain.length - 1],
       chain,
@@ -218,7 +236,7 @@ export class Behalf implements Engine {
     return verifyAudit(await this.auditStore.all());
   }
 
-  /** Re-hydrate a Mandate from a serialized string (does not verify yet). */
+  /** Re-hydrate a Mandate from a serialized string (verify/authorize only). */
   import(serialized: string): Mandate {
     const token = JSON.parse(
       Buffer.from(serialized, "base64url").toString("utf8"),
@@ -226,10 +244,23 @@ export class Behalf implements Engine {
     return new Mandate(token, this);
   }
 
-  /** Throws {@link IntegrityError} if the HMAC chain does not replay. */
+  /**
+   * Throws {@link IntegrityError} if the issuer is untrusted or the Ed25519
+   * signature chain does not verify. Pure public-key checks — no secrets.
+   */
   verifySignature(token: MandateToken): void {
-    const expected = chainSignature(this.rootKey, token.id, token.caveats);
-    if (expected !== token.sig) throw new IntegrityError();
+    if (token.v !== 2) throw new IntegrityError(`unsupported token version ${token.v}`);
+    if (!this.trusted.has(token.rootPub)) throw new IntegrityError("untrusted issuer");
+    if (token.blocks.length !== token.sigs.length) throw new IntegrityError("malformed token");
+
+    let signerPub = importPublicKey(token.rootPub);
+    for (let i = 0; i < token.blocks.length; i++) {
+      const block = token.blocks[i];
+      if (!verifyBlock(signerPub, block, token.sigs[i])) {
+        throw new IntegrityError(`signature failed at block ${i}`);
+      }
+      signerPub = importPublicKey(block.nextPub);
+    }
   }
 
   // ---- Static facade over a lazily-created default instance ----
@@ -257,6 +288,13 @@ export class Behalf implements Engine {
   }
 }
 
+/** Thrown when attenuating a mandate that has no in-memory delegation key. */
+export class BehalfDelegationError extends BehalfError {
+  constructor() {
+    super("this mandate cannot be delegated (it was imported without its delegation key)");
+  }
+}
+
 /** Construct an isolated engine (own key + stores). */
 export function createBehalf(config: BehalfConfig = {}): Behalf {
   return new Behalf(config);
@@ -264,14 +302,16 @@ export function createBehalf(config: BehalfConfig = {}): Behalf {
 
 function chainIds(token: MandateToken): string[] {
   const ids = [token.id];
-  for (const c of token.caveats) if (c.t === "id") ids.push(c.id);
+  for (const c of allCaveats(token)) if (c.t === "id") ids.push(c.id);
   return ids;
 }
 
+function allCaveats(token: MandateToken): Caveat[] {
+  return token.blocks.flatMap((b) => b.caveats);
+}
+
 function capsFromToken(token: MandateToken): string[] {
-  // Effective grant for narrowing = the most recent cap caveat (already the
-  // intersection of all prior ones by construction of attenuation).
   let latest: string[] = [];
-  for (const c of token.caveats) if (c.t === "cap") latest = c.can;
+  for (const c of allCaveats(token)) if (c.t === "cap") latest = c.can;
   return latest;
 }
