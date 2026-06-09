@@ -226,6 +226,18 @@ const behalf = createBehalf({
 });
 ```
 
+### Cross-language interop
+
+A mandate issued by either reference port verifies in the other: both encode keys
+as raw Ed25519 (base64url) and produce byte-identical canonical block bytes, so a
+TS-issued mandate authorizes under the Python verifier and vice versa — including
+attenuated multi-block chains. Checked by `npm run test:interop` (needs `python3`)
+and in CI.
+
+```bash
+npm run test:interop   # PY⇄TS, issue in one port, verify/authorize in the other
+```
+
 ### Python
 
 An identical-shape port lives in [`python/`](./python):
@@ -261,12 +273,12 @@ Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
 persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
-between agents, and **capability linting**. CI runs both test suites on Node
-20/22 and Python 3.9/3.12.
+between agents, **capability linting**, and **cross-language wire interop**
+(TS⇄Python mandates verify in either port). CI runs both test suites plus the
+interop check on Node 20/22 and Python 3.9/3.12.
 
-Deferred: deep multi-hop tuning, cross-language wire interop (the TS port uses
-SPKI/PKCS8 key encoding, the Python port raw keys — same JSON token shape), and
-the Phase-2 hosted control plane (managed revocation propagation + dashboard).
+Deferred: deep multi-hop tuning and the Phase-2 hosted control plane (managed
+revocation propagation, audit retention, and a consent/policy dashboard).
 
 ## License
 

@@ -64,19 +64,26 @@ export function verifyBlock(publicKey: KeyObject, block: Block, sig: string): bo
 }
 
 export function exportPublicKey(key: KeyObject): string {
-  return key.export({ type: "spki", format: "der" }).toString("base64url");
+  // Raw 32-byte Ed25519 public key (JWK `x`), base64url — matches the Python
+  // port's encoding so tokens verify across both reference implementations.
+  const jwk = key.export({ format: "jwk" }) as { x?: string };
+  if (!jwk.x) throw new Error("not an Ed25519 public key");
+  return jwk.x;
 }
 
 export function importPublicKey(b64: string): KeyObject {
-  return createPublicKey({ key: Buffer.from(b64, "base64url"), type: "spki", format: "der" });
+  return createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: b64 }, format: "jwk" });
 }
 
 export function exportPrivateKey(key: KeyObject): string {
-  return key.export({ type: "pkcs8", format: "der" }).toString("base64url");
+  // Raw 32-byte seed (JWK `d`), base64url.
+  const jwk = key.export({ format: "jwk" }) as { d?: string };
+  if (!jwk.d) throw new Error("not an Ed25519 private key");
+  return jwk.d;
 }
 
-export function importPrivateKey(b64: string): KeyObject {
-  return createPrivateKey({ key: Buffer.from(b64, "base64url"), type: "pkcs8", format: "der" });
+export function importPrivateKey(d: string, x: string): KeyObject {
+  return createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", x, d }, format: "jwk" });
 }
 
 export function sha256Hex(data: string): string {

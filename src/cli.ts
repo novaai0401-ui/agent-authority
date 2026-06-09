@@ -31,7 +31,7 @@ function loadEngine(): Behalf {
   let keyPair;
   if (existsSync(KEY_FILE)) {
     const { priv, pub } = JSON.parse(readFileSync(KEY_FILE, "utf8"));
-    keyPair = { privateKey: importPrivateKey(priv), publicKey: importPublicKey(pub) };
+    keyPair = { privateKey: importPrivateKey(priv, pub), publicKey: importPublicKey(pub) };
   } else {
     keyPair = newKeyPair();
     writeFileSync(

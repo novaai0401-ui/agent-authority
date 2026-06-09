@@ -46,6 +46,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "test:interop": "npm run build && node scripts/interop.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "example:data-access": "node dist-test/examples/data-access-agent.js",
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
