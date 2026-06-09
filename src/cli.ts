@@ -12,6 +12,7 @@ import {
 } from "./crypto.js";
 import { FileRevocationStore, FileAuditStore } from "./persist.js";
 import { AuthorizationError } from "./errors.js";
+import { lint } from "./lint.js";
 
 /**
  * `behalf` CLI — grant, inspect, authorize, revoke, and audit mandates from the
@@ -82,6 +83,7 @@ Usage:
   behalf authorize <mandate> <action>
   behalf revoke <mandate-id>
   behalf audit <mandate-id>
+  behalf lint <cap> [<cap> ...]
 
 State dir: ${HOME}  (override with $BEHALF_HOME)`;
 
@@ -108,9 +110,27 @@ async function main(): Promise<number> {
         console.error("grant requires --principal, --agent, and at least one --can");
         return 2;
       }
+      // Warn (on stderr, so stdout stays a clean mandate) about loose scopes.
+      for (const f of lint(can)) {
+        process.stderr.write(`[lint:${f.level}] ${f.capability}: ${f.message}\n`);
+      }
       const m = engine.grant({ principal, agent, can, expiresIn });
       console.log(m.serialize());
       return 0;
+    }
+    case "lint": {
+      const caps = args._;
+      if (caps.length === 0) {
+        console.error("lint requires at least one capability");
+        return 2;
+      }
+      const findings = lint(caps);
+      for (const f of findings) {
+        console.log(`${f.level.toUpperCase().padEnd(5)} ${f.capability}  ${f.message}`);
+      }
+      const hasProblem = findings.some((f) => f.level !== "info");
+      console.log(`\n${findings.length} finding(s)`);
+      return hasProblem ? 1 : 0;
     }
     case "inspect": {
       const m = engine.import(args._[0]);

@@ -10,6 +10,7 @@ from behalf import create_behalf  # noqa: E402
 from behalf.audit import verify  # noqa: E402
 from behalf.capability import is_narrowing, parse, permits  # noqa: E402
 from behalf.errors import AuthorizationError, IntegrityError, WideningError  # noqa: E402
+from behalf.lint import is_clean, lint  # noqa: E402
 from behalf.mcp import behalf_mcp_tools, with_behalf  # noqa: E402
 
 
@@ -244,6 +245,34 @@ class AsymmetricTests(unittest.TestCase):
         self.assertFalse(imported.can_delegate)
         with self.assertRaises(Exception):
             imported.attenuate(can=["read:calendar"])
+
+
+class LintTests(unittest.TestCase):
+    def test_clean_scope(self):
+        self.assertEqual(lint(["read:calendar", "spend:usd<=50"]), [])
+        self.assertTrue(is_clean(["read:calendar", "spend:usd<=50"]))
+
+    def test_wildcard_warns(self):
+        f = lint(["*"])[0]
+        self.assertEqual(f.level, "warn")
+        self.assertEqual(f.rule, "wildcard")
+
+    def test_unbounded_spend_warns(self):
+        f = next(x for x in lint(["spend:usd"]) if x.rule == "unbounded-amount")
+        self.assertEqual(f.level, "warn")
+
+    def test_rateless_send_is_info(self):
+        findings = lint(["send:email"])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "info")
+        self.assertTrue(is_clean(["send:email"]))
+
+    def test_unparseable_is_error(self):
+        self.assertEqual(lint(["nocolon"])[0].level, "error")
+
+    def test_duplicate_warns(self):
+        f = next(x for x in lint(["read:calendar", "read:calendar"]) if x.rule == "duplicate")
+        self.assertEqual(f.level, "warn")
 
 
 class FakeServer:

@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 48 tests: capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server
+npm test             # 58 tests: capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint
 ```
 
 Run the reference integrations:
@@ -151,6 +151,7 @@ Run the reference integrations:
 npm run example:data-access   # a read-only data agent
 npm run example:spend         # a budget- and rate-limited spend agent
 npm run example:delegation    # two-agent attenuation + cascade revoke
+npm run example:a2a           # agent-to-agent delegation over HTTP
 ```
 
 ### CLI
@@ -182,6 +183,36 @@ node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
 { "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
 ```
 
+### A2A — agent-to-agent over HTTP
+
+`behalf/a2a` carries a verifiable delegation chain across the network. The caller
+attaches its mandate (optionally attenuating it first); the callee verifies the
+chain offline with only the issuer's public key, then authorizes the action:
+
+```ts
+import { behalfFetch, guard } from "behalf/a2a";
+
+// callee: a node:http middleware that authorizes each request
+const gate = guard({ engine: callee, capability: () => "spend:usd<=50" });
+// ... in your http handler: if (!(await gate(req, res))) return;
+
+// caller: forward the mandate, narrowed so the callee gets strictly less
+await behalfFetch(url, mandate, { method: "POST" },
+  { attenuate: { can: ["spend:usd<=20"] } });
+```
+
+### Capability linting
+
+`lint()` flags loose scopes (`*`, unbounded `spend:`, rate-less `send:`, ...) so
+agents and humans write tight capabilities by default:
+
+```ts
+import { lint } from "behalf";
+lint(["spend:usd", "*"]); // → warnings: add a limit; avoid wildcard
+```
+
+Also available as `behalf lint <cap> ...` on the CLI.
+
 ### Persistence
 
 `FileRevocationStore` and `FileAuditStore` keep revocation and audit state across
@@ -201,7 +232,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 32 tests, zero dependencies
+python3 -m unittest discover -s tests   # 38 tests, zero dependencies
 ```
 
 ```python
@@ -228,8 +259,10 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
-persistence** for revocation + audit, a **`behalf` CLI**, and a **dependency-free
-stdio MCP server**. CI runs both test suites on Node 20/22 and Python 3.9/3.12.
+persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
+stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
+between agents, and **capability linting**. CI runs both test suites on Node
+20/22 and Python 3.9/3.12.
 
 Deferred: deep multi-hop tuning, cross-language wire interop (the TS port uses
 SPKI/PKCS8 key encoding, the Python port raw keys — same JSON token shape), and

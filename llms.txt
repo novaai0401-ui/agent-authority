@@ -104,6 +104,22 @@ behalf audit <mandate-id>
 `node dist/mcp-server.js` (bin: `behalf-mcp`) speaks JSON-RPC 2.0 over stdio and
 exposes request_mandate / present_mandate / check_authority to any MCP client.
 
+## A2A (agent-to-agent over HTTP)
+
+```ts
+import { behalfFetch, guard } from "behalf/a2a";
+// callee verifies + authorizes each request (offline, public key only):
+const gate = guard({ engine, capability: () => "spend:usd<=50" });
+// caller forwards its mandate, narrowed so the callee gets strictly less:
+await behalfFetch(url, mandate, { method: "POST" }, { attenuate: { can: ["spend:usd<=20"] } });
+```
+
+## Capability linting
+
+`lint(caps)` flags loose scopes: `*` (warn), unbounded `spend:` (warn),
+rate-less `send:` (info), unparseable (error), duplicates (warn). Prefer scopes
+that lint clean. Also `behalf lint <cap> ...` on the CLI.
+
 ## Persistence
 
 `FileRevocationStore(path)` and `FileAuditStore(path)` persist revocation and the

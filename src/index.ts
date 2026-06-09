@@ -47,6 +47,17 @@ export {
 } from "./store.js";
 export { FileRevocationStore, FileAuditStore } from "./persist.js";
 export { verify as verifyAuditLog } from "./audit.js";
+export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
+export {
+  present,
+  behalfFetch,
+  authorizeIncoming,
+  guard,
+  MANDATE_HEADER,
+  type PresentOptions,
+  type GuardOptions,
+  type GuardedRequest,
+} from "./a2a.js";
 export {
   BehalfError,
   AuthorizationError,

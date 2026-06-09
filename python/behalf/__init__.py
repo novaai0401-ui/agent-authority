@@ -20,6 +20,7 @@ Five verbs, one primitive (the Mandate):
 from .audit import verify as verify_audit_log
 from .behalf import Behalf, create_behalf
 from .capability import Capability, is_narrowing, parse as parse_capability, permits
+from .lint import LintFinding, is_clean, lint
 from .errors import (
     AuthorizationError,
     BehalfError,
@@ -45,6 +46,9 @@ __all__ = [
     "parse_capability",
     "permits",
     "is_narrowing",
+    "lint",
+    "is_clean",
+    "LintFinding",
     "verify_audit_log",
     "BehalfError",
     "AuthorizationError",

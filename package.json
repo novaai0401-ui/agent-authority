@@ -34,8 +34,8 @@
       "import": "./dist/mcp.js"
     },
     "./a2a": {
-      "types": "./dist/mcp.d.ts",
-      "import": "./dist/mcp.js"
+      "types": "./dist/a2a.d.ts",
+      "import": "./dist/a2a.js"
     },
     "./server": {
       "types": "./dist/mcp-server.d.ts",
@@ -49,7 +49,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "example:data-access": "node dist-test/examples/data-access-agent.js",
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
-    "example:delegation": "node dist-test/examples/two-agent-delegation.js"
+    "example:delegation": "node dist-test/examples/two-agent-delegation.js",
+    "example:a2a": "node dist-test/examples/a2a-delegation.js"
   },
   "engines": {
     "node": ">=18"
