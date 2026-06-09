@@ -106,6 +106,7 @@ export {
 export type {
   Caveat,
   Block,
+  Proof,
   MandateToken,
   GrantOptions,
   AttenuateOptions,

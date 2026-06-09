@@ -4,11 +4,14 @@
  * A Mandate is a signed, scoped, time-bound capability token that proves who
  * authorized what, within which limits, and through which chain of agents.
  *
- * The token model is macaroon-style: an `identifier` (the root mandate id) plus
- * an ordered list of `caveats` (restrictions), bound together by an HMAC chain.
- * Holders can attenuate (append narrowing caveats) without any key, and the
- * intersection rule is enforced structurally — every caveat must be satisfied,
- * so a downstream agent can only ever shrink authority, never widen it.
+ * The token is a biscuit-style Ed25519 signature chain of blocks. Each block
+ * carries restrictions (caveats) and publishes a fresh public key; the next
+ * block is signed by the matching private key, which the holder must possess to
+ * attenuate (append a narrowing block) or to authorize (prove possession of the
+ * terminal key). The intersection rule is enforced structurally — every cap
+ * caveat must be satisfied — so a downstream agent can only ever shrink
+ * authority, never widen it, and a holder cannot present a truncated prefix of
+ * its chain because it lacks that prefix's terminal key.
  */
 
 /** Restriction attached to a mandate. */
@@ -41,6 +44,17 @@ export interface MandateToken {
   sigs: string[];
   /** Issuer (root) public key, base64url SPKI — pin this to establish trust. */
   rootPub: string;
+}
+
+/**
+ * Proof of possession of a mandate's terminal key, presented at authorize time
+ * to prove the bearer is the legitimate tail of the chain (not a truncated
+ * prefix). `ts` is when it was minted (checked for freshness); `sig` is the
+ * Ed25519 signature over the proof message.
+ */
+export interface Proof {
+  ts: number;
+  sig: string;
 }
 
 /** Options for {@link Behalf.grant}. */

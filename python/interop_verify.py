@@ -1,11 +1,12 @@
-"""Cross-language interop helper: verify + authorize a foreign mandate.
+"""Cross-language interop helper: verify + authorize a foreign presentation.
 
-Trusts only the given issuer public key. Prints "ALLOW" or "DENY:<reason>".
-Usage:
+Trusts only the given issuer public key and requires a possession proof. Prints
+"ALLOW" or "DENY:<reason>". Usage:
 
-    python3 interop_verify.py <pubkey> <mandate> <action>
+    python3 interop_verify.py <pubkey> <mandate> <action> <proof-json>
 """
 
+import json
 import os
 import sys
 
@@ -16,11 +17,11 @@ from behalf.errors import AuthorizationError  # noqa: E402
 
 
 def main() -> None:
-    pubkey, mandate, action = sys.argv[1], sys.argv[2], sys.argv[3]
+    pubkey, mandate, action, proof_json = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
     verifier = create_behalf(trust=[pubkey])
     m = verifier.import_(mandate)
     try:
-        m.authorize(action)
+        verifier.authorize(m.token, action, json.loads(proof_json))
         print("ALLOW")
     except AuthorizationError as e:
         print("DENY:" + e.reason)

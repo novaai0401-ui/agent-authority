@@ -1,4 +1,4 @@
-import type { AttenuateOptions, AuditEntry, Caveat, MandateToken } from "./types.js";
+import type { AttenuateOptions, AuditEntry, Caveat, MandateToken, Proof } from "./types.js";
 import type { KeyObject } from "node:crypto";
 
 /**
@@ -6,8 +6,13 @@ import type { KeyObject } from "node:crypto";
  * Kept as an interface here to avoid a circular import with the Mandate wrapper.
  */
 export interface Engine {
-  authorize(token: MandateToken, action: string): Promise<void>;
+  authorizeAsHolder(
+    token: MandateToken,
+    action: string,
+    delegationKey: KeyObject | undefined,
+  ): Promise<void>;
   attenuate(token: MandateToken, delegationKey: KeyObject | undefined, opts: AttenuateOptions): Mandate;
+  provePossession(token: MandateToken, delegationKey: KeyObject): Proof;
   revoke(id: string): Promise<void>;
   audit(id: string): Promise<AuditEntry[]>;
 }
@@ -78,14 +83,34 @@ export class Mandate {
   /**
    * Prove authority for a concrete action. Resolves if permitted; throws
    * {@link AuthorizationError} otherwise. Always writes an audit record.
+   *
+   * Requires this mandate to hold its delegation key (i.e. it came from
+   * `grant`/`attenuate`, not `import`): authorization includes a proof of
+   * possession of the chain's terminal key, which closes truncation and makes a
+   * serialized token unusable as a bare bearer credential. To authorize a
+   * mandate you received from elsewhere, the holder must present a proof — see
+   * `behalf/a2a`, or use `engine.inspect()` for an advisory (no-possession)
+   * check.
    */
   authorize(action: string): Promise<void> {
-    return this.engine.authorize(this.token, action);
+    return this.engine.authorizeAsHolder(this.token, action, this.delegationKey);
   }
 
   /** Hand a narrowed mandate to a sub-agent. Can only shrink scope. */
   attenuate(opts: AttenuateOptions): Mandate {
     return this.engine.attenuate(this.token, this.delegationKey, opts);
+  }
+
+  /**
+   * Mint a fresh proof of possession for presenting this mandate across a trust
+   * boundary (e.g. an A2A call). Requires the delegation key, so only the
+   * legitimate holder can produce it.
+   */
+  prove(): Proof {
+    if (!this.delegationKey) {
+      throw new Error("cannot prove possession: this mandate was imported without its key");
+    }
+    return this.engine.provePossession(this.token, this.delegationKey);
   }
 
   /** Revoke this mandate and its entire downstream chain. */

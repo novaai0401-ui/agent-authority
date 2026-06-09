@@ -169,6 +169,27 @@ export function isNarrowing(parent: string[], child: string[]): { ok: boolean; o
 }
 
 /**
+ * Is `child`'s quantitative bound a genuine tightening of `grant`'s, in the same
+ * direction? An upper bound (`<=`/`<`) may only be narrowed by another upper
+ * bound or an exact value within it; a lower bound (`>=`/`>`) likewise; `=` must
+ * match. This rejects direction flips like narrowing `usd<=50` to `usd>=10`.
+ */
+function amountNarrows(grant: Amount, child: Amount): boolean {
+  const isUpper = (op: Op) => op === "<=" || op === "<";
+  const isLower = (op: Op) => op === ">=" || op === ">";
+  if (grant.op === "=") return child.op === "=" && child.value === grant.value;
+  if (isUpper(grant.op)) {
+    if (!isUpper(child.op) && child.op !== "=") return false;
+    return applyOp(child.value, grant.op, grant.value);
+  }
+  if (isLower(grant.op)) {
+    if (!isLower(child.op) && child.op !== "=") return false;
+    return applyOp(child.value, grant.op, grant.value);
+  }
+  return false;
+}
+
+/**
  * Does grant cover a *narrower capability* (not a concrete action)? This is the
  * attenuation check: e.g. `spend:usd<=50` covers `spend:usd<=20` but not
  * `spend:usd<=80`, and `read:calendar` covers `read:calendar`.
@@ -181,10 +202,9 @@ function coversCapability(grant: Capability, child: Capability): boolean {
 
   if (grant.amount) {
     if (!child.amount) return false; // child must also be bounded
-    // The child's worst-case (its limit) must still satisfy the grant's cap.
-    if (!applyOp(child.amount.value, grant.amount.op, grant.amount.value)) {
-      return false;
-    }
+    // The child must narrow in the SAME direction as the grant — a `<=` cap may
+    // only be tightened by another upper bound (or `=`), never flipped to `>=`.
+    if (!amountNarrows(grant.amount, child.amount)) return false;
   }
   if (grant.rate) {
     if (!child.rate) return false;

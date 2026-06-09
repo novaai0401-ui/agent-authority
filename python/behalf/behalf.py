@@ -16,7 +16,9 @@ from .crypto import (
     new_key_pair,
     public_of,
     sign_block,
+    sign_proof,
     verify_block,
+    verify_proof,
 )
 from .errors import AuthorizationError, BehalfError, IntegrityError, WideningError
 from .mandate import Mandate
@@ -64,6 +66,7 @@ class Behalf:
         revocations: Optional[RevocationStore] = None,
         audit: Optional[AuditStore] = None,
         rate: Optional[RateStore] = None,
+        proof_skew_ms: int = 300_000,
         now: Optional[Callable[[], int]] = None,
     ) -> None:
         self._keys = root_key_pair or new_key_pair()
@@ -72,6 +75,7 @@ class Behalf:
         self._revocations = revocations or MemoryRevocationStore()
         self._audit = audit or MemoryAuditStore()
         self._rate = rate or MemoryRateStore()
+        self._proof_skew_ms = proof_skew_ms
         self._now = now or (lambda: int(time.time() * 1000))
 
     @property
@@ -136,7 +140,23 @@ class Behalf:
         }
         return Mandate(new_token, self, nxt.private)
 
-    def authorize(self, token: dict, action: str) -> None:
+    def prove_possession(self, token: dict, delegation_key: str) -> dict:
+        """Mint a proof of possession of the chain's terminal key."""
+        ts = self._now()
+        return {"ts": ts, "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts)}
+
+    def authorize_as_holder(self, token: dict, action: str, delegation_key: Optional[str]) -> None:
+        """Holder path: ``mandate.authorize()`` routes here, minting a PoP."""
+        if delegation_key is None:
+            raise DelegationError()
+        self.authorize(token, action, self.prove_possession(token, delegation_key))
+
+    def authorize(self, token: dict, action: str, proof: Optional[dict] = None) -> None:
+        """Verify token + proof of possession of the terminal key, then the action.
+
+        ``proof`` is required: it binds the presenter to the exact (untruncated)
+        chain and a fresh timestamp, which closes trailing-block truncation and
+        stops a serialized token from being a reusable bearer credential."""
         chain = _chain_ids(token)
 
         def deny(reason: str) -> None:
@@ -156,24 +176,59 @@ class Behalf:
         except IntegrityError as e:
             return deny(str(e))
 
-        # 2. Revocation.
-        for cid in chain:
+        # 2. Proof of possession of the chain's terminal key (anti-truncation).
+        if not proof:
+            return deny("possession proof required")
+        if abs(self._now() - int(proof.get("ts", 0))) > self._proof_skew_ms:
+            return deny("stale possession proof")
+        terminal = token["blocks"][-1]["nextPub"]
+        if not verify_proof(terminal, token["id"], token["sigs"], int(proof["ts"]), proof["sig"]):
+            return deny("invalid possession proof")
+
+        # 3. Revocation + expiry + scope (shared with inspect()).
+        ok, reason, matched, _request = self._evaluate(token, action)
+        if not ok:
+            return deny(reason)
+
+        # 4. Rate limits (sliding window; shareable via the rate store).
+        if matched is not None and matched.rate is not None:
+            key = f"{chain[0]}|{_request.verb}:{_request.resource}"
+            allowed = self._rate.hit(
+                key, cap.window_ms(matched.rate.per), matched.rate.value, self._now()
+            )
+            if not allowed:
+                return deny(f"rate limit exceeded ({matched.rate.value:g}/{matched.rate.per})")
+
+        self._audit.record(
+            mandate_id=chain[-1], chain=chain, action=action, decision="allow", issuer=token["rootPub"]
+        )
+
+    def inspect(self, token: dict, action: str) -> dict:
+        """Advisory check (signature + revocation + expiry + scope), no PoP, no
+        side effects. Returns {"allowed": bool, "reason": Optional[str]}."""
+        ok, reason, _matched, _request = self._evaluate(token, action)
+        return {"allowed": ok, "reason": None if ok else reason}
+
+    def _evaluate(self, token: dict, action: str):
+        """Shared signature + revocation + expiry + scope check (no PoP/side effects).
+
+        Returns (ok, reason, matched, request)."""
+        try:
+            self.verify_signature(token)
+        except IntegrityError as e:
+            return (False, str(e), None, None)
+        for cid in _chain_ids(token):
             if self._revocations.is_revoked(cid):
-                return deny(f"revoked ({cid})")
-
+                return (False, f"revoked ({cid})", None, None)
         caveats = _all_caveats(token)
-
-        # 3. Expiry.
         now = self._now()
         for c in caveats:
             if c["t"] == "expires" and now > c["at"]:
-                return deny("expired")
-
-        # 4. Scope: action must satisfy EVERY cap caveat (the intersection).
+                return (False, "expired", None, None)
         try:
             request = cap.parse(action)
         except Exception as e:  # noqa: BLE001
-            return deny(str(e))
+            return (False, str(e), None, None)
         matched = None
         for c in caveats:
             if c["t"] != "cap":
@@ -183,20 +238,10 @@ class Behalf:
                 None,
             )
             if grant is None:
-                return deny(f'"{action}" not within granted scope')
+                return (False, f'"{action}" not within granted scope', None, None)
             if grant.rate is not None:
                 matched = grant
-
-        # 5. Rate limits (sliding window; shareable via the rate store).
-        if matched is not None and matched.rate is not None:
-            key = f"{chain[0]}|{request.verb}:{request.resource}"
-            allowed = self._rate.hit(key, cap.window_ms(matched.rate.per), matched.rate.value, now)
-            if not allowed:
-                return deny(f"rate limit exceeded ({matched.rate.value:g}/{matched.rate.per})")
-
-        self._audit.record(
-            mandate_id=chain[-1], chain=chain, action=action, decision="allow", issuer=token["rootPub"]
-        )
+        return (True, None, matched, request)
 
     def revoke(self, id: str) -> None:
         self._revocations.revoke(id)

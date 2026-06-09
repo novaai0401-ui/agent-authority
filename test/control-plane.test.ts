@@ -38,16 +38,19 @@ test("revocation propagates across engines via the control plane", async () => {
     const agentB = createBehalf({ rootKeyPair: keyPair, revocations: new HttpRevocationStore(base) });
 
     const mandate = agentA.grant({ principal: "u", agent: "a", can: ["read:calendar"], expiresIn: "1h" });
-    const wire = mandate.serialize();
 
-    // B can use it...
-    await assert.doesNotReject(agentB.import(wire).authorize("read:calendar"));
+    // B (a different engine, same key + shared revocation store) can verify a
+    // presentation of the mandate...
+    await assert.doesNotReject(agentB.authorize(mandate.token, "read:calendar", mandate.prove()));
 
     // ...A revokes through the control plane...
     await agentA.revoke(mandate.id);
 
     // ...and B sees the revocation immediately.
-    await assert.rejects(() => agentB.import(wire).authorize("read:calendar"), AuthorizationError);
+    await assert.rejects(
+      () => agentB.authorize(mandate.token, "read:calendar", mandate.prove()),
+      AuthorizationError,
+    );
   });
 });
 
@@ -111,14 +114,16 @@ test("rate limit is shared across agents via the control plane", async () => {
     const agentB = createBehalf({ rootKeyPair: keyPair, rate: new HttpRateStore(base) });
 
     const mA = agentA.grant({ principal: "u", agent: "a", can: ["send:email rate<=3/h"], expiresIn: "1h" });
-    // B holds the SAME mandate (same id) — re-issued under the same key/scope.
-    const mB = agentB.import(mA.serialize());
 
-    // Combined budget is 3/h. A spends 2, B spends 1 → all allowed; the 4th denies.
+    // Combined budget is 3/h, shared via the plane. A spends 2 (holder path);
+    // B verifies a presentation for the 3rd; the 4th denies for BOTH engines.
     await assert.doesNotReject(mA.authorize("send:email"));
     await assert.doesNotReject(mA.authorize("send:email"));
-    await assert.doesNotReject(mB.authorize("send:email"));
-    await assert.rejects(() => mB.authorize("send:email"), AuthorizationError);
+    await assert.doesNotReject(agentB.authorize(mA.token, "send:email", mA.prove()));
+    await assert.rejects(
+      () => agentB.authorize(mA.token, "send:email", mA.prove()),
+      AuthorizationError,
+    );
     // ...and A is also blocked — the cap is genuinely shared, not per-process.
     await assert.rejects(() => mA.authorize("send:email"), AuthorizationError);
   });

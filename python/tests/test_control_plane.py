@@ -37,12 +37,11 @@ class ControlPlaneTests(unittest.TestCase):
         b = create_behalf(root_key_pair=kp, revocations=HttpRevocationStore(self.base))
 
         m = a.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
-        wire = m.serialize()
-        b.import_(wire).authorize("read:calendar")  # works before revoke
+        b.authorize(m.token, "read:calendar", m.prove())  # works before revoke
 
         a.revoke(m.id)
         with self.assertRaises(AuthorizationError):
-            b.import_(wire).authorize("read:calendar")
+            b.authorize(m.token, "read:calendar", m.prove())
 
     def test_audit_retained_centrally(self):
         engine = create_behalf(audit=HttpAuditStore(self.base))
@@ -90,13 +89,12 @@ class ControlPlaneTests(unittest.TestCase):
         a = create_behalf(root_key_pair=kp, rate=HttpRateStore(self.base))
         b = create_behalf(root_key_pair=kp, rate=HttpRateStore(self.base))
         m_a = a.grant(principal="u", agent="a", can=["send:email rate<=3/h"], expires_in="1h")
-        m_b = b.import_(m_a.serialize())
 
         m_a.authorize("send:email")
         m_a.authorize("send:email")
-        m_b.authorize("send:email")
+        b.authorize(m_a.token, "send:email", m_a.prove())  # 3rd, via the other engine
         with self.assertRaises(AuthorizationError):
-            m_b.authorize("send:email")
+            b.authorize(m_a.token, "send:email", m_a.prove())
         with self.assertRaises(AuthorizationError):
             m_a.authorize("send:email")  # cap is shared, not per-process
 
