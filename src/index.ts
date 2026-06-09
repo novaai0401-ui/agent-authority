@@ -61,6 +61,15 @@ export {
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
 export {
+  generateQuickstart,
+  findSurface,
+  listSurfaces,
+  DEFAULT_SURFACES,
+  type Surface,
+  type QuickstartOptions,
+  type Quickstart,
+} from "./quickstart.js";
+export {
   present,
   behalfFetch,
   authorizeIncoming,

@@ -104,6 +104,14 @@ behalf audit <mandate-id>
 `node dist/mcp-server.js` (bin: `behalf-mcp`) speaks JSON-RPC 2.0 over stdio and
 exposes request_mandate / present_mandate / check_authority to any MCP client.
 
+## Quickstarts (any AI)
+
+`behalf quickstart <surface>` prints ready-to-paste wiring. Built-in:
+claude-code, claude-desktop, cursor, copilot, windsurf, gemini-cli,
+openai-agents (MCP) and gpt, gemini (function-calling tool schemas). Any other AI
+is configurable: `behalf quickstart <id> --surfaces custom.json`, or use
+`generic-mcp`. Programmatic: `generateQuickstart(findSurface(id), opts)`.
+
 ## A2A (agent-to-agent over HTTP)
 
 ```ts

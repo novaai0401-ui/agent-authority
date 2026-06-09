@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 64 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane
+npm test             # 71 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -182,6 +182,20 @@ node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
 ```jsonc
 // register with an MCP client, e.g.:
 { "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
+```
+
+### Quickstarts for any AI
+
+`behalf quickstart` generates the wiring for any surface — Claude Code, Cursor,
+Copilot, Windsurf, Gemini CLI, OpenAI Agents (MCP), and GPT / Gemini APIs
+(function tools). Any other AI is configurable via a custom surface file or the
+generic MCP template. See [QUICKSTART.md](./QUICKSTART.md).
+
+```bash
+behalf quickstart --list
+behalf quickstart claude-code
+behalf quickstart gpt           # OpenAI function tools
+behalf quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
 ```
 
 ### A2A — agent-to-agent over HTTP
@@ -299,8 +313,10 @@ persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
 between agents, **capability linting**, **cross-language wire interop**
 (TS⇄Python mandates verify in either port), and a **control plane** for
-revocation propagation, audit retention, and consent/policy with a dashboard. CI
-runs both test suites plus the interop check on Node 20/22 and Python 3.9/3.12.
+revocation propagation, audit retention, and consent/policy with a dashboard, and
+**dynamic per-surface quickstarts** that wire Behalf into any AI (Claude Code,
+Cursor, Copilot, Gemini, GPT, or a custom surface). CI runs both test suites plus
+the interop check on Node 20/22 and Python 3.9/3.12.
 
 Deferred: deep multi-hop tuning, a Python control-plane client, and hardening of
 the hosted surface (auth, multi-tenant isolation, durable consent storage).
