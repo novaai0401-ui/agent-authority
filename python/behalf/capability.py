@@ -130,6 +130,27 @@ def is_narrowing(parent: list[str], child: list[str]) -> tuple[bool, Optional[st
     return (True, None)
 
 
+def _amount_narrows(grant: Amount, child: Amount) -> bool:
+    """Is child's bound a genuine tightening of grant's, in the same direction?
+
+    An upper bound (<=,<) may only be narrowed by another upper bound or an exact
+    value within it; a lower bound (>=,>) likewise; '=' must match. Rejects
+    direction flips like narrowing usd<=50 to usd>=10."""
+    upper = {"<=", "<"}
+    lower = {">=", ">"}
+    if grant.op == "=":
+        return child.op == "=" and child.value == grant.value
+    if grant.op in upper:
+        if child.op not in upper and child.op != "=":
+            return False
+        return _apply_op(child.value, grant.op, grant.value)
+    if grant.op in lower:
+        if child.op not in lower and child.op != "=":
+            return False
+        return _apply_op(child.value, grant.op, grant.value)
+    return False
+
+
 def _covers_capability(grant: Capability, child: Capability) -> bool:
     """Does grant cover a narrower *capability* (not a concrete action)?"""
     if grant.wildcard:
@@ -143,7 +164,7 @@ def _covers_capability(grant: Capability, child: Capability) -> bool:
     if grant.amount is not None:
         if child.amount is None:
             return False
-        if not _apply_op(child.amount.value, grant.amount.op, grant.amount.value):
+        if not _amount_narrows(grant.amount, child.amount):
             return False
     if grant.rate is not None:
         if child.rate is None:

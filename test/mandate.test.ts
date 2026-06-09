@@ -49,9 +49,8 @@ test("a tampered token fails signature verification", async () => {
     for (const c of block.caveats) if (c.t === "cap") c.can = ["*"];
   assert.throws(() => b.verifySignature(forged), IntegrityError);
 
-  // And authorize denies it rather than honoring the forgery.
-  const tampered = b.import(Buffer.from(JSON.stringify(forged)).toString("base64url"));
-  await assert.rejects(() => tampered.authorize("spend:usd=999"), AuthorizationError);
+  // And an advisory check denies it rather than honoring the forgery.
+  assert.equal((await b.inspect(forged, "spend:usd=999")).allowed, false);
 });
 
 test("serialize / import round-trips", async () => {
@@ -59,7 +58,8 @@ test("serialize / import round-trips", async () => {
   const m = b.grant({ principal: "u", agent: "a", can: ["read:calendar"], expiresIn: "1h" });
   const restored = b.import(m.serialize());
   assert.equal(restored.id, m.id);
-  await assert.doesNotReject(restored.authorize("read:calendar"));
+  // The restored (public) token still authorizes when the holder presents a proof.
+  await assert.doesNotReject(b.authorize(restored.token, "read:calendar", m.prove()));
 });
 
 test("rate limits are enforced across calls", async () => {

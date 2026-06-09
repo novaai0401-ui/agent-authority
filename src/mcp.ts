@@ -149,7 +149,8 @@ export function behalfMcpTools(engine: Behalf = Behalf.default): ToolDefinition[
     },
     {
       name: "check_authority",
-      description: "Check whether a mandate authorizes a specific action (does not perform it).",
+      description:
+        "Advisory check of whether a mandate's scope would allow an action (does not perform it and does not prove possession).",
       inputSchema: {
         type: "object",
         required: ["mandate", "action"],
@@ -157,12 +158,7 @@ export function behalfMcpTools(engine: Behalf = Behalf.default): ToolDefinition[
       },
       handler: async (args) => {
         const m = engine.import(String(args.mandate));
-        try {
-          await m.authorize(String(args.action));
-          return { allowed: true };
-        } catch (e) {
-          return { allowed: false, reason: e instanceof AuthorizationError ? e.reason : String(e) };
-        }
+        return engine.inspect(m.token, String(args.action));
       },
     },
   ];

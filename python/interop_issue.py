@@ -1,7 +1,7 @@
 """Cross-language interop helper: issue a mandate as the Python port.
 
-Prints {"mandate": "<serialized>", "pubkey": "<issuer public key>"} as JSON so a
-TypeScript verifier can check it. Usage:
+Prints {"mandate", "pubkey", "proof"} as JSON so a TypeScript verifier can check
+it: the proof is a possession proof of the chain's terminal key. Usage:
 
     python3 interop_issue.py <cap> [<narrowed-cap>]
 """
@@ -24,7 +24,15 @@ def main() -> None:
     if narrow:
         mandate = mandate.attenuate(can=[narrow], expires_in="30m", agent="py-sub")
 
-    print(json.dumps({"mandate": mandate.serialize(), "pubkey": issuer.public_key}))
+    print(
+        json.dumps(
+            {
+                "mandate": mandate.serialize(),
+                "pubkey": issuer.public_key,
+                "proof": mandate.prove(),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -38,6 +38,17 @@ test("attenuation cannot widen (eager check)", () => {
   assert.throws(() => parent.attenuate({ can: ["write:email"] }), WideningError);
 });
 
+test("attenuation cannot flip a bound's direction (M-1)", () => {
+  const b = createBehalf();
+  const parent = b.grant({ principal: "u", agent: "a", can: ["spend:usd<=50"], expiresIn: "1h" });
+  // `>=10` is unbounded above — not a narrowing of `<=50`, even though 10 <= 50.
+  assert.throws(() => parent.attenuate({ can: ["spend:usd>=10"] }), WideningError);
+  assert.throws(() => parent.attenuate({ can: ["spend:usd>=100"] }), WideningError);
+  // A tighter same-direction bound (or exact value within) is still fine.
+  assert.doesNotThrow(() => parent.attenuate({ can: ["spend:usd<=20"] }));
+  assert.doesNotThrow(() => parent.attenuate({ can: ["spend:usd=20"] }));
+});
+
 test("two-hop delegation keeps the intersection (no splicing)", async () => {
   const b = createBehalf();
   const root = b.grant({
@@ -59,17 +70,15 @@ test("a compromised middle agent cannot forge a wider child", async () => {
   const root = b.grant({ principal: "u", agent: "a1", can: ["spend:usd<=10"], expiresIn: "1h" });
   const mid = root.attenuate({ can: ["spend:usd<=10"], agent: "a2" });
 
-  // Attacker hand-edits the leaf token to inject a wider cap caveat, bypassing
-  // the eager check. The signature chain no longer verifies, so it is denied.
+  // Attacker hand-edits the leaf token to inject a wider cap caveat. The
+  // signature chain no longer verifies, so even an advisory check denies it.
   const forged = structuredClone(mid.token);
   forged.blocks[forged.blocks.length - 1].caveats.push({ t: "cap", can: ["spend:usd<=10000"] });
-  const tampered = b.import(Buffer.from(JSON.stringify(forged)).toString("base64url"));
-  await assert.rejects(() => tampered.authorize("spend:usd=9999"), AuthorizationError);
+  assert.equal((await b.inspect(forged, "spend:usd=9999")).allowed, false);
 
   // Appending a brand-new block without a valid signature is also rejected.
   const spliced = structuredClone(mid.token);
   spliced.blocks.push({ caveats: [{ t: "cap", can: ["spend:usd<=10000"] }], nextPub: spliced.rootPub });
   spliced.sigs.push("AAAA");
-  const splicedM = b.import(Buffer.from(JSON.stringify(spliced)).toString("base64url"));
-  await assert.rejects(() => splicedM.authorize("spend:usd=9999"), AuthorizationError);
+  assert.equal((await b.inspect(spliced, "spend:usd=9999")).allowed, false);
 });

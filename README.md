@@ -87,8 +87,9 @@ grant's `spend:usd<=50`.
 4. **Standards-tracking, not standards-defining.** A clean facade over
    SPIFFE / OAuth 2.1 OBO / capability tokens.
 5. **Neutral.** No cloud, model, or framework lock-in.
-6. **Offline-verifiable.** A mandate is checked and narrowed without calling
-   home (macaroon-style attenuation). Only revocation needs a network check.
+6. **Offline-verifiable.** Signature chain, scope, expiry, and proof of
+   possession are all checked locally (asymmetric, public-key only). Only
+   revocation and the shared rate cap need a network check.
 
 ### The intersection rule is structural
 
@@ -102,26 +103,36 @@ respect to the issuer, and offline. An agent's effective authority is always:
 principal's grant  ∩  every narrowing along the chain
 ```
 
-A compromised middle agent can never widen scope, and no block can be removed or
-spliced. This closes the OAuth "delegation-chain splicing" weakness — see
-[`test/delegation.test.ts`](./test/delegation.test.ts).
+A compromised middle agent can never widen scope; no block can be edited,
+removed from the middle, or **truncated** off the end. Editing/middle-removal is
+blocked by the signature chain; truncation is blocked by a **proof of
+possession** at authorize time (below). This closes the OAuth
+"delegation-chain splicing" weakness — see [`test/delegation.test.ts`](./test/delegation.test.ts)
+and [`test/asymmetric.test.ts`](./test/asymmetric.test.ts).
 
-### Offline, third-party verification (public key only)
+### Authorizing requires proving possession (no bearer tokens)
 
-Because the chain is asymmetric, **any** relying party can verify a mandate and
-its full delegation chain with only the issuer's public key — no shared secret:
+A serialized mandate is **not** a usable bearer credential. To authorize, the
+holder must prove possession of the chain's *terminal* private key — the one each
+delegation hands to the next agent. A truncated prefix would need that prefix's
+terminal key, which a downstream holder does not have, so it cannot escalate by
+dropping its own block.
 
 ```ts
-const issuer = createBehalf();
-const pub = issuer.publicKey;                 // share this freely
+// In-process holder: mandate.authorize() mints + checks the proof for you.
+await mandate.authorize("spend:usd=20");
 
-const verifier = createBehalf({ trust: [pub] }); // holds no secret
-const m = verifier.import(serializedMandate);
-await m.authorize("spend:usd=20");            // verified + checked offline
+// Across a trust boundary, the holder presents the token + a fresh proof;
+// the verifier needs only the issuer's PUBLIC key (no shared secret):
+const verifier = createBehalf({ trust: [issuer.publicKey] });
+await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove());
 ```
 
-A mandate restored via `import` can be verified, authorized, and audited, but
-not delegated (it doesn't carry the private delegation key) — a safe default.
+For an advisory "would this token's scope allow X?" check that does **not** prove
+possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. A
+mandate restored via `import` can be inspected and verified, but to authorize or
+delegate it you must hold its key. Over HTTP, `behalf/a2a`'s `present()` attaches
+the proof automatically.
 
 ## What maps to the standard underneath
 
@@ -142,7 +153,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 84 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 86 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -291,7 +302,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 66 tests, zero dependencies
+python3 -m unittest discover -s tests   # 68 tests, zero dependencies
 ```
 
 ```python
@@ -360,9 +371,22 @@ Honest about what this reference implementation does *not* yet do:
   for production Python deployments. (Node uses its native, hardened crypto.)
 - **Rate windows are sliding-count, not token-bucket**, and rejected attempts
   are not counted — adequate for caps, not for burst shaping.
+- **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
+  naive single-record tampering, and is verifiable without trusting storage — but
+  an adversary with full write access can recompute the chain, and tail deletion
+  isn't detectable. For stronger guarantees, sign entries/checkpoints, anchor the
+  head hash externally, or use append-only/WORM storage.
+- **`agent` binding is advisory, not cryptographic.** The `agent` caveat is a
+  string label; nothing yet ties a mandate to a specific agent *identity* (a
+  SPIFFE/SVID-style key binding is roadmap). Treat it as documentation, not an
+  authentication factor.
 
 None of these affect the core security properties (unforgeable, attenuation-only,
-offline-verifiable mandates); they are durability/scaling/hardening trade-offs.
+truncation-resistant, offline-verifiable mandates); they are
+durability/scaling/hardening trade-offs.
+
+This implementation has not had an independent cryptographic audit — commission
+one before any 1.0 / production positioning.
 
 ## License
 

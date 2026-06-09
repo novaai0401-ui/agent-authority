@@ -67,6 +67,24 @@ def public_of(private_b64: str) -> str:
     return _b64(_ed25519.publickey(_unb64(private_b64)))
 
 
+def proof_message(id: str, sigs: list, ts: int) -> bytes:
+    """Proof-of-possession message — byte-identical to the TS port."""
+    return f"behalf-pop\n{id}\n{','.join(sigs)}\n{ts}".encode("utf-8")
+
+
+def sign_proof(private_b64: str, id: str, sigs: list, ts: int) -> str:
+    seed = _unb64(private_b64)
+    pk = _ed25519.publickey(seed)
+    return _b64(_ed25519.signature(proof_message(id, sigs, ts), seed, pk))
+
+
+def verify_proof(public_b64: str, id: str, sigs: list, ts: int, sig_b64: str) -> bool:
+    try:
+        return _ed25519.checkvalid(_unb64(sig_b64), proof_message(id, sigs, ts), _unb64(public_b64))
+    except Exception:
+        return False
+
+
 def sha256_hex(data: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 

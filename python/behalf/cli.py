@@ -191,13 +191,14 @@ def main(argv=None) -> int:
             print("authorize requires <mandate> <action>", file=sys.stderr)
             return 2
         mandate, action = args["_"][0], args["_"][1]
-        try:
-            engine.import_(mandate).authorize(action)
-            print(f"ALLOW  {action}")
+        # The CLI only has the public token (not the holder's key), so this is an
+        # advisory scope check — it does not prove possession.
+        result = engine.inspect(engine.import_(mandate).token, action)
+        if result["allowed"]:
+            print(f"ALLOW  {action}  (advisory; possession not checked)")
             return 0
-        except AuthorizationError as e:
-            print(f"DENY   {action}  ({e.reason})")
-            return 1
+        print(f"DENY   {action}  ({result['reason']})")
+        return 1
     if cmd == "revoke":
         if not args["_"]:
             print("revoke requires <mandate-id>", file=sys.stderr)

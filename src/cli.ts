@@ -228,15 +228,16 @@ async function main(): Promise<number> {
         console.error("authorize requires <mandate> <action>");
         return 2;
       }
-      try {
-        await engine.import(mandate).authorize(action);
-        console.log(`ALLOW  ${action}`);
+      // The CLI only has the public token (not the holder's key), so this is an
+      // advisory scope check — it does not prove possession. Real enforcement
+      // (with proof of possession) happens in-process or over behalf/a2a.
+      const result = await engine.inspect(engine.import(mandate).token, action);
+      if (result.allowed) {
+        console.log(`ALLOW  ${action}  (advisory; possession not checked)`);
         return 0;
-      } catch (e) {
-        const reason = e instanceof AuthorizationError ? e.reason : String(e);
-        console.log(`DENY   ${action}  (${reason})`);
-        return 1;
       }
+      console.log(`DENY   ${action}  (${result.reason})`);
+      return 1;
     }
     case "revoke": {
       const id = args._[0];

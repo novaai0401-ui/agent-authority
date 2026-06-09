@@ -5,6 +5,8 @@ import {
   verifyBlock,
   exportPublicKey,
   importPublicKey,
+  signProof,
+  verifyProof,
   type KeyPair,
 } from "./crypto.js";
 import {
@@ -33,6 +35,7 @@ import type {
   Caveat,
   GrantOptions,
   MandateToken,
+  Proof,
 } from "./types.js";
 import type { KeyObject } from "node:crypto";
 
@@ -45,6 +48,8 @@ export interface BehalfConfig {
   audit?: AuditStore;
   /** Rate-limit accounting. Use a shared store to enforce one cap across agents. */
   rate?: RateStore;
+  /** Max age (ms) of a possession proof accepted at authorize. Default 5 min. */
+  proofSkewMs?: number;
   /** Override the clock — handy for tests. */
   now?: () => number;
 }
@@ -73,6 +78,7 @@ export class Behalf implements Engine {
   private readonly revocations: RevocationStore;
   private readonly auditStore: AuditStore;
   private readonly rateStore: RateStore;
+  private readonly proofSkewMs: number;
   private readonly now: () => number;
 
   constructor(config: BehalfConfig = {}) {
@@ -82,6 +88,7 @@ export class Behalf implements Engine {
     this.revocations = config.revocations ?? new MemoryRevocationStore();
     this.auditStore = config.audit ?? new MemoryAuditStore();
     this.rateStore = config.rate ?? new MemoryRateStore();
+    this.proofSkewMs = config.proofSkewMs ?? 300_000;
     this.now = config.now ?? (() => Date.now());
   }
 
@@ -156,8 +163,35 @@ export class Behalf implements Engine {
     return new Mandate(newToken, this, next.privateKey);
   }
 
-  /** AUTHORIZE — verify a token then check a concrete action against it. */
-  async authorize(token: MandateToken, action: string): Promise<void> {
+  /**
+   * Mint a possession proof for `token` using `delegationKey` (the holder's
+   * terminal key). Throws if the key is absent — you cannot act on a mandate you
+   * only hold the public token for.
+   */
+  provePossession(token: MandateToken, delegationKey: KeyObject): Proof {
+    const ts = this.now();
+    return { ts, sig: signProof(delegationKey, token.id, token.sigs, ts) };
+  }
+
+  /** Holder path: `mandate.authorize()` routes here, minting a PoP from its key. */
+  async authorizeAsHolder(
+    token: MandateToken,
+    action: string,
+    delegationKey: KeyObject | undefined,
+  ): Promise<void> {
+    if (!delegationKey) throw new BehalfDelegationError();
+    return this.authorize(token, action, this.provePossession(token, delegationKey));
+  }
+
+  /**
+   * AUTHORIZE — verify a token, prove the presenter possesses the chain's
+   * terminal key, then check a concrete action. The `proof` is required: it
+   * binds the presenter to the exact (untruncated) chain and a fresh timestamp,
+   * which is what closes trailing-block truncation and stops a serialized token
+   * from being a reusable bearer credential. Produce one with `provePossession`
+   * (or, across the wire, `behalf/a2a`'s `present`).
+   */
+  async authorize(token: MandateToken, action: string, proof?: Proof): Promise<void> {
     const chain = chainIds(token);
     const deny = async (reason: string): Promise<never> => {
       await this.auditStore.record({
@@ -178,40 +212,29 @@ export class Behalf implements Engine {
       return deny(e instanceof IntegrityError ? e.message : "invalid signature");
     }
 
-    // 2. Revocation: this mandate or any ancestor.
-    for (const id of chain) {
-      if (await this.revocations.isRevoked(id)) return deny(`revoked (${id})`);
+    // 2. Proof of possession of the chain's terminal key (anti-truncation).
+    if (!proof) return deny("possession proof required");
+    if (Math.abs(this.now() - proof.ts) > this.proofSkewMs) return deny("stale possession proof");
+    const terminal = importPublicKey(token.blocks[token.blocks.length - 1].nextPub);
+    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, proof.sig)) {
+      return deny("invalid possession proof");
     }
 
-    const caveats = allCaveats(token);
+    // 3. Revocation + expiry + scope (shared with inspect()).
+    const ev = await this.evaluate(token, action);
+    if (!ev.ok) return deny(ev.reason);
 
-    // 3. Expiry: earliest expires caveat wins.
-    const now = this.now();
-    for (const c of caveats) {
-      if (c.t === "expires" && now > c.at) return deny("expired");
-    }
-
-    // 4. Scope: the action must satisfy EVERY cap caveat (the intersection).
-    let request: Capability;
-    try {
-      request = parse(action);
-    } catch (e) {
-      return deny((e as Error).message);
-    }
-    let matched: Capability | undefined;
-    for (const c of caveats) {
-      if (c.t !== "cap") continue;
-      const grant = c.can.map(parse).find((g) => satisfies(g, request));
-      if (!grant) return deny(`"${action}" not within granted scope`);
-      if (grant.rate) matched = grant;
-    }
-
-    // 5. Rate limits (sliding window; shareable via the rate store).
-    if (matched?.rate) {
-      const key = `${chain[0]}|${request.verb}:${request.resource}`;
-      const allowed = await this.rateStore.hit(key, windowMs(matched.rate.per), matched.rate.value, now);
+    // 4. Rate limits (sliding window; shareable via the rate store).
+    if (ev.matched?.rate) {
+      const key = `${chain[0]}|${ev.request.verb}:${ev.request.resource}`;
+      const allowed = await this.rateStore.hit(
+        key,
+        windowMs(ev.matched.rate.per),
+        ev.matched.rate.value,
+        this.now(),
+      );
       if (!allowed) {
-        return deny(`rate limit exceeded (${matched.rate.value}/${matched.rate.per})`);
+        return deny(`rate limit exceeded (${ev.matched.rate.value}/${ev.matched.rate.per})`);
       }
     }
 
@@ -222,6 +245,55 @@ export class Behalf implements Engine {
       action,
       decision: "allow",
     });
+  }
+
+  /**
+   * INSPECT — advisory check of signature, revocation, expiry, and scope WITHOUT
+   * a possession proof. Use for "would this token allow X?" tooling (CLI,
+   * dashboards, `check_authority`). It does NOT prove the caller holds the
+   * mandate, does not consume rate budget, and writes no audit record — never
+   * gate a real action on it; use `authorize` for that.
+   */
+  async inspect(token: MandateToken, action: string): Promise<{ allowed: boolean; reason?: string }> {
+    const ev = await this.evaluate(token, action);
+    return ev.ok ? { allowed: true } : { allowed: false, reason: ev.reason };
+  }
+
+  /** Shared signature + revocation + expiry + scope check (no PoP, no side effects). */
+  private async evaluate(
+    token: MandateToken,
+    action: string,
+  ): Promise<
+    | { ok: true; matched?: Capability; request: Capability }
+    | { ok: false; reason: string }
+  > {
+    try {
+      this.verifySignature(token);
+    } catch (e) {
+      return { ok: false, reason: e instanceof IntegrityError ? e.message : "invalid signature" };
+    }
+    for (const id of chainIds(token)) {
+      if (await this.revocations.isRevoked(id)) return { ok: false, reason: `revoked (${id})` };
+    }
+    const caveats = allCaveats(token);
+    const now = this.now();
+    for (const c of caveats) {
+      if (c.t === "expires" && now > c.at) return { ok: false, reason: "expired" };
+    }
+    let request: Capability;
+    try {
+      request = parse(action);
+    } catch (e) {
+      return { ok: false, reason: (e as Error).message };
+    }
+    let matched: Capability | undefined;
+    for (const c of caveats) {
+      if (c.t !== "cap") continue;
+      const grant = c.can.map(parse).find((g) => satisfies(g, request));
+      if (!grant) return { ok: false, reason: `"${action}" not within granted scope` };
+      if (grant.rate) matched = grant;
+    }
+    return { ok: true, matched, request };
   }
 
   /** REVOKE — kill a mandate (and, transitively, everything downstream). */

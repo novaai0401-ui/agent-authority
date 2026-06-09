@@ -92,7 +92,8 @@ class MandateTests(unittest.TestCase):
         m = b.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
         restored = b.import_(m.serialize())
         self.assertEqual(restored.id, m.id)
-        restored.authorize("read:calendar")
+        # The restored public token authorizes when the holder presents a proof.
+        b.authorize(restored.token, "read:calendar", m.prove())
 
     def test_rate_limit(self):
         clock = {"now": 0}
@@ -134,21 +135,41 @@ class DelegationTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             leaf.authorize("read:calendar")
 
+    def test_cannot_flip_bound_direction(self):
+        b = create_behalf()
+        parent = b.grant(principal="u", agent="a", can=["spend:usd<=50"], expires_in="1h")
+        # `>=10` is unbounded above — not a narrowing of `<=50` (M-1).
+        with self.assertRaises(WideningError):
+            parent.attenuate(can=["spend:usd>=10"])
+        parent.attenuate(can=["spend:usd<=20"])  # same-direction tighter is fine
+
     def test_forged_wider_child_denied(self):
-        import base64
         import copy
-        import json
 
         b = create_behalf()
         root = b.grant(principal="u", agent="a1", can=["spend:usd<=10"], expires_in="1h")
         mid = root.attenuate(can=["spend:usd<=10"], agent="a2")
         forged = copy.deepcopy(mid.token)
         forged["blocks"][-1]["caveats"].append({"t": "cap", "can": ["spend:usd<=10000"]})
-        tampered = b.import_(
-            base64.urlsafe_b64encode(json.dumps(forged).encode()).rstrip(b"=").decode()
+        # The signature chain no longer verifies, so even an advisory check denies.
+        self.assertFalse(b.inspect(forged, "spend:usd=9999")["allowed"])
+
+    def test_truncation_denied(self):
+        # C-1 regression: a narrowed child cannot drop its block to regain scope.
+        b = create_behalf()
+        root = b.grant(
+            principal="u", agent="a1", can=["read:calendar", "spend:usd<=50"], expires_in="1h"
         )
+        child = root.attenuate(can=["read:calendar"], agent="a2")
+        truncated = {
+            "v": 2,
+            "id": child.token["id"],
+            "blocks": [child.token["blocks"][0]],
+            "sigs": [child.token["sigs"][0]],
+            "rootPub": child.token["rootPub"],
+        }
         with self.assertRaises(AuthorizationError):
-            tampered.authorize("spend:usd=9999")
+            b.authorize(truncated, "spend:usd=50", child.prove())
 
 
 class RevocationTests(unittest.TestCase):
@@ -214,30 +235,28 @@ class AsymmetricTests(unittest.TestCase):
         issuer = create_behalf()
         m = issuer.grant(principal="u", agent="a", can=["spend:usd<=50"], expires_in="1h")
         verifier = create_behalf(trust=[issuer.public_key])
-        received = verifier.import_(m.serialize())
-        received.authorize("spend:usd=20")
+        # Holder presents token + proof of possession; verifier holds no secret.
+        verifier.authorize(m.token, "spend:usd=20", m.prove())
         with self.assertRaises(AuthorizationError):
-            received.authorize("spend:usd=60")
+            verifier.authorize(m.token, "spend:usd=60", m.prove())
 
     def test_untrusted_issuer_rejected(self):
         issuer = create_behalf()
         m = issuer.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
         stranger = create_behalf()
-        received = stranger.import_(m.serialize())
         with self.assertRaises(AuthorizationError):
-            received.authorize("read:calendar")
+            stranger.authorize(m.token, "read:calendar", m.prove())
 
     def test_attenuated_chain_verifies(self):
         issuer = create_behalf()
         root = issuer.grant(principal="u", agent="a1", can=["spend:usd<=50"], expires_in="1h")
         child = root.attenuate(can=["spend:usd<=10"], agent="a2")
         verifier = create_behalf(trust=[issuer.public_key])
-        received = verifier.import_(child.serialize())
-        received.authorize("spend:usd=10")
+        verifier.authorize(child.token, "spend:usd=10", child.prove())
         with self.assertRaises(AuthorizationError):
-            received.authorize("spend:usd=11")
+            verifier.authorize(child.token, "spend:usd=11", child.prove())
 
-    def test_imported_cannot_delegate(self):
+    def test_imported_cannot_delegate_or_authorize(self):
         issuer = create_behalf()
         m = issuer.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
         self.assertTrue(m.can_delegate)
@@ -245,6 +264,8 @@ class AsymmetricTests(unittest.TestCase):
         self.assertFalse(imported.can_delegate)
         with self.assertRaises(Exception):
             imported.attenuate(can=["read:calendar"])
+        with self.assertRaises(Exception):
+            imported.authorize("read:calendar")  # no key to prove possession
 
 
 class CachingRevocationTests(unittest.TestCase):

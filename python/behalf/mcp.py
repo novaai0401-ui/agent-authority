@@ -92,12 +92,9 @@ def behalf_mcp_tools(engine: Optional[Behalf] = None) -> list[dict]:
         }
 
     def check_authority(args: dict) -> dict:
+        # Advisory scope check (no possession proof; does not perform the action).
         m = eng.import_(args["mandate"])
-        try:
-            m.authorize(args["action"])
-            return {"allowed": True}
-        except AuthorizationError as e:
-            return {"allowed": False, "reason": e.reason}
+        return eng.inspect(m.token, args["action"])
 
     return [
         {
@@ -127,7 +124,7 @@ def behalf_mcp_tools(engine: Optional[Behalf] = None) -> list[dict]:
         },
         {
             "name": "check_authority",
-            "description": "Check whether a mandate authorizes an action (does not perform it).",
+            "description": "Advisory check of whether a mandate's scope would allow an action (does not perform it and does not prove possession).",
             "inputSchema": {
                 "type": "object",
                 "required": ["mandate", "action"],

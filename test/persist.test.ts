@@ -19,12 +19,14 @@ test("revocation persists across engine instances", async () => {
 
     const a = createBehalf({ rootKeyPair: keyPair, revocations: new FileRevocationStore(revPath) });
     const m = a.grant({ principal: "u", agent: "ag", can: ["read:calendar"], expiresIn: "1h" });
-    const wire = m.serialize();
     await a.revoke(m.id);
 
     // A brand-new engine reading the same file sees the revocation.
     const b = createBehalf({ rootKeyPair: keyPair, revocations: new FileRevocationStore(revPath) });
-    await assert.rejects(() => b.import(wire).authorize("read:calendar"), AuthorizationError);
+    await assert.rejects(
+      () => b.authorize(m.token, "read:calendar", m.prove()),
+      AuthorizationError,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

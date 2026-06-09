@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Behalf } from "./behalf.js";
 import { Mandate } from "./mandate.js";
 import { AuthorizationError } from "./errors.js";
-import type { AttenuateOptions } from "./types.js";
+import type { AttenuateOptions, Proof } from "./types.js";
 
 /**
  * A2A (agent-to-agent) HTTP transport.
@@ -21,15 +21,26 @@ import type { AttenuateOptions } from "./types.js";
 /** Header carrying the serialized mandate on an A2A request. */
 export const MANDATE_HEADER = "x-behalf-mandate";
 
+/** Header carrying the caller's proof of possession (anti-truncation / replay). */
+export const PROOF_HEADER = "x-behalf-proof";
+
 export interface PresentOptions {
   /** Narrow the mandate before sending, so the callee gets less authority. */
   attenuate?: AttenuateOptions;
 }
 
-/** Build the header(s) that carry a mandate to a downstream agent. */
+/**
+ * Build the headers that carry a mandate to a downstream agent: the serialized
+ * (optionally attenuated) token plus a fresh proof of possession of its terminal
+ * key. The callee verifies both, so a truncated or intercepted token is useless.
+ */
 export function present(mandate: Mandate, opts: PresentOptions = {}): Record<string, string> {
   const outgoing = opts.attenuate ? mandate.attenuate(opts.attenuate) : mandate;
-  return { [MANDATE_HEADER]: outgoing.serialize() };
+  const proof = outgoing.prove();
+  return {
+    [MANDATE_HEADER]: outgoing.serialize(),
+    [PROOF_HEADER]: Buffer.from(JSON.stringify(proof), "utf8").toString("base64url"),
+  };
 }
 
 /** `fetch` wrapper that attaches (and optionally attenuates) a mandate. */
@@ -66,8 +77,17 @@ export async function authorizeIncoming(
 ): Promise<Mandate> {
   const raw = headerValue(headers, MANDATE_HEADER);
   if (!raw) throw new AuthorizationError(capability, "no mandate presented");
+  const proofRaw = headerValue(headers, PROOF_HEADER);
+  if (!proofRaw) throw new AuthorizationError(capability, "no possession proof presented");
+  let proof: Proof;
+  try {
+    proof = JSON.parse(Buffer.from(proofRaw, "base64url").toString("utf8")) as Proof;
+  } catch {
+    throw new AuthorizationError(capability, "malformed possession proof");
+  }
   const mandate = engine.import(raw);
-  await mandate.authorize(capability); // signature chain + scope + expiry + revocation + audit
+  // Verifies the chain, the proof of possession, scope, expiry, and revocation.
+  await engine.authorize(mandate.token, capability, proof);
   return mandate;
 }
 
