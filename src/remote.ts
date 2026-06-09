@@ -88,10 +88,10 @@ export class HttpAuditStore extends RemoteBase implements AuditStore {
 
 /** Rate limiting enforced centrally — one cap shared across all agents. */
 export class HttpRateStore extends RemoteBase implements RateStore {
-  async hit(key: string, windowMs: number, limit: number, now: number): Promise<boolean> {
-    return (
-      await this.post<{ allowed: boolean }>("/v1/rate", { key, windowMs, limit, now })
-    ).allowed;
+  async hit(key: string, windowMs: number, limit: number, _now: number): Promise<boolean> {
+    // `now` is intentionally NOT sent — the control plane stamps each hit with
+    // its own clock, so a skewed or hostile client can't shift the window.
+    return (await this.post<{ allowed: boolean }>("/v1/rate", { key, windowMs, limit })).allowed;
   }
 }
 

@@ -102,9 +102,15 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
 
     // ---- Dashboard ----
     if (method === "GET" && path === "/") {
-      // In tenant-scoped mode the global audit view is withheld.
+      // A tenant only ever sees its own audit; the shared revocation/consent
+      // views are withheld so the dashboard can't leak across tenants.
+      if (callerIssuer) {
+        const recent = (await audit.forIssuer(callerIssuer)).slice(-20).reverse();
+        return sendHtml(res, dashboard([], recent, []));
+      }
+      // Admin / single-trust-domain: full view (withheld under tenantScoped).
       const recent = options.tenantScoped ? [] : (await audit.all()).slice(-20).reverse();
-      return sendHtml(res, dashboard(revocations, recent, await consents.list()));
+      return sendHtml(res, dashboard(listRevoked(revocations), recent, await consents.list()));
     }
 
     // ---- Revocation ----
@@ -168,12 +174,14 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     if (method === "POST" && path === "/v1/rate") {
       const body = await readJson(req);
       if (!body?.key) return send(res, 400, { error: "key required" });
-      const allowed = await rate.hit(
-        String(body.key),
-        Number(body.windowMs),
-        Number(body.limit),
-        Number(body.now ?? Date.now()),
-      );
+      const windowMs = Number(body.windowMs);
+      const limit = Number(body.limit);
+      if (!Number.isFinite(windowMs) || windowMs <= 0 || !Number.isFinite(limit) || limit < 0) {
+        return send(res, 400, { error: "windowMs must be > 0 and limit must be >= 0" });
+      }
+      // The control plane is the time authority — the client's clock is ignored
+      // so it can't slide the window to evade the shared cap.
+      const allowed = await rate.hit(String(body.key), windowMs, limit, Date.now());
       return send(res, 200, { allowed });
     }
 
@@ -298,11 +306,10 @@ function esc(s: unknown): string {
 }
 
 function dashboard(
-  revocations: RevocationStore,
+  revoked: string[],
   recent: AuditEntry[],
   consents: ConsentRecord[],
 ): string {
-  const revoked = listRevoked(revocations);
   const pending = consents.filter((c) => c.status === "pending");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Behalf Control Plane</title>

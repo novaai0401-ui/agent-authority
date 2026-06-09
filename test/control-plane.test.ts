@@ -188,6 +188,33 @@ test("per-tenant tokens isolate audit by authenticated identity", async () => {
   );
 });
 
+test("the dashboard does not leak another tenant's audit", async () => {
+  const kpA = newKeyPair();
+  const kpB = newKeyPair();
+  const issuerA = exportPublicKey(kpA.publicKey);
+  const issuerB = exportPublicKey(kpB.publicKey);
+
+  await withControlPlane(
+    async (base) => {
+      const a = createBehalf({ rootKeyPair: kpA, audit: new HttpAuditStore(base, { token: "tokA" }) });
+      const b = createBehalf({ rootKeyPair: kpB, audit: new HttpAuditStore(base, { token: "tokB" }) });
+      await a.grant({ principal: "a", agent: "x", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+      await b.grant({ principal: "b", agent: "y", can: ["read:repo/secret-b"], expiresIn: "1h" }).authorize("read:repo/secret-b");
+
+      // Tenant A loads the dashboard: it must show A's action, never B's.
+      const aHtml = await (await fetch(`${base}/`, { headers: { authorization: "Bearer tokA" } })).text();
+      assert.match(aHtml, /read:calendar/);
+      assert.doesNotMatch(aHtml, /read:repo\/secret-b/);
+      assert.doesNotMatch(aHtml, new RegExp(issuerB.slice(0, 16)));
+
+      // The admin still sees everything.
+      const adminHtml = await (await fetch(`${base}/`, { headers: { authorization: "Bearer admintok" } })).text();
+      assert.match(adminHtml, /read:repo\/secret-b/);
+    },
+    { tenants: { tokA: issuerA, tokB: issuerB }, token: "admintok" },
+  );
+});
+
 test("tenant-scoped mode refuses the unscoped audit list", async () => {
   await withControlPlane(
     async (base) => {
@@ -204,6 +231,29 @@ test("tenant-scoped mode refuses the unscoped audit list", async () => {
     },
     { tenantScoped: true },
   );
+});
+
+test("rate limiting uses the server clock, ignoring a hostile client now", async () => {
+  await withControlPlane(async (base) => {
+    const hit = (extra: object) =>
+      fetch(`${base}/v1/rate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "k|send:email", windowMs: 3_600_000, limit: 1, ...extra }),
+      }).then((r) => r.json() as Promise<{ allowed: boolean }>);
+
+    assert.equal((await hit({})).allowed, true); // first hit allowed
+    // A far-future `now` in the body must NOT slide the window open again.
+    assert.equal((await hit({ now: Number.MAX_SAFE_INTEGER })).allowed, false);
+
+    // Malformed window/limit are rejected.
+    const bad = await fetch(`${base}/v1/rate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "k2", windowMs: 0, limit: 5 }),
+    });
+    assert.equal(bad.status, 400);
+  });
 });
 
 test("consent flow: request stays pending until decided", async () => {
