@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 83 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 84 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -291,7 +291,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 65 tests, zero dependencies
+python3 -m unittest discover -s tests   # 66 tests, zero dependencies
 ```
 
 ```python
@@ -343,11 +343,15 @@ Honest about what this reference implementation does *not* yet do:
   its own issuer) and give each tenant a private *policy* namespace, but
   revocation ids, rate keys, and consent records live in one shared space. That's
   fine for a single trust domain; for hard multi-tenancy, run a plane per tenant.
-- **Shared rate checks hit the network each call.** `HttpRateStore` must consult
-  the control plane on every `authorize()` (the cap is authoritative and can't be
-  cached). Revocation, by contrast, can be wrapped in `CachingRevocationStore` for
-  a bounded staleness window — a revoked answer is cached forever, a not-revoked
-  answer for `ttlMs`. Signature, scope, and expiry are always fully offline.
+- **Shared rate checks hit the network each call.** `HttpRateStore` consults the
+  control plane on every `authorize()` (the cap is authoritative and can't be
+  cached). The plane stamps each hit with its **own clock** and validates the
+  window/limit, so a skewed or hostile client can't slide the window; the
+  limit/window values themselves still come from the caller's mandate (the
+  honest-enforcer model — a node that bypasses its own runtime is out of scope,
+  like any client that skips the check). Revocation, by contrast, can be wrapped
+  in `CachingRevocationStore` for a bounded staleness window. Signature, scope,
+  and expiry are always fully offline.
 - **Cross-language delegation is verify-only.** A mandate issued in one port
   verifies/authorizes in the other, but attenuation needs the in-memory
   delegation key, so delegate within the issuing port.

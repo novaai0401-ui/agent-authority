@@ -174,12 +174,14 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     if (method === "POST" && path === "/v1/rate") {
       const body = await readJson(req);
       if (!body?.key) return send(res, 400, { error: "key required" });
-      const allowed = await rate.hit(
-        String(body.key),
-        Number(body.windowMs),
-        Number(body.limit),
-        Number(body.now ?? Date.now()),
-      );
+      const windowMs = Number(body.windowMs);
+      const limit = Number(body.limit);
+      if (!Number.isFinite(windowMs) || windowMs <= 0 || !Number.isFinite(limit) || limit < 0) {
+        return send(res, 400, { error: "windowMs must be > 0 and limit must be >= 0" });
+      }
+      // The control plane is the time authority — the client's clock is ignored
+      // so it can't slide the window to evade the shared cap.
+      const allowed = await rate.hit(String(body.key), windowMs, limit, Date.now());
       return send(res, 200, { allowed });
     }
 

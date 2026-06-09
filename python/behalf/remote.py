@@ -83,10 +83,10 @@ class HttpRateStore(_Base):
     """Rate limiting enforced centrally — one cap shared across all agents."""
 
     def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        # `now` is intentionally NOT sent — the control plane stamps each hit
+        # with its own clock, so a skewed or hostile client can't shift the window.
         return bool(
-            self._post(
-                "/v1/rate", {"key": key, "windowMs": window_ms, "limit": limit, "now": now}
-            )["allowed"]
+            self._post("/v1/rate", {"key": key, "windowMs": window_ms, "limit": limit})["allowed"]
         )
 
 

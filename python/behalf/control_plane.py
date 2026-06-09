@@ -259,13 +259,14 @@ class ControlPlane:
                 if path == "/v1/rate":
                     if not body.get("key"):
                         return self._send(400, {"error": "key required"})
+                    window_ms = int(body.get("windowMs", 0))
+                    limit = float(body.get("limit", -1))
+                    if window_ms <= 0 or limit < 0:
+                        return self._send(400, {"error": "windowMs must be > 0 and limit must be >= 0"})
+                    # The control plane is the time authority — the client's clock
+                    # is ignored so it can't slide the window to evade the cap.
                     with cp._audit_lock:
-                        allowed = cp.rate.hit(
-                            body["key"],
-                            int(body.get("windowMs", 0)),
-                            float(body.get("limit", 0)),
-                            int(body.get("now", int(time.time() * 1000))),
-                        )
+                        allowed = cp.rate.hit(body["key"], window_ms, limit, int(time.time() * 1000))
                     return self._send(200, {"allowed": allowed})
                 m = re.match(r"^/v1/consent/([^/]+)/decision$", path)
                 if m:

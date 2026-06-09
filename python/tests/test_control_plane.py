@@ -1,5 +1,6 @@
 """Tests for the Python control plane + client stores (stdlib only)."""
 
+import json
 import os
 import sys
 import unittest
@@ -112,6 +113,36 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(len(a_entries), 1)
         self.assertEqual(len(b_entries), 2)
         self.assertTrue(all(e["issuer"] == a.public_key for e in a_entries))
+
+    def test_rate_uses_server_clock_ignoring_client_now(self):
+        import urllib.error
+        import urllib.request
+
+        def hit(**extra):
+            payload = {"key": "k|send:email", "windowMs": 3_600_000, "limit": 1, **extra}
+            req = urllib.request.Request(
+                f"{self.base}/v1/rate",
+                data=json.dumps(payload).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as r:
+                return json.loads(r.read())["allowed"]
+
+        self.assertTrue(hit())
+        # A far-future client `now` must not slide the window open again.
+        self.assertFalse(hit(now=2**53))
+
+        # Malformed window/limit -> 400.
+        bad = urllib.request.Request(
+            f"{self.base}/v1/rate",
+            data=json.dumps({"key": "k2", "windowMs": 0, "limit": 5}).encode(),
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(bad)
+        self.assertEqual(ctx.exception.code, 400)
 
     def test_consent_flow(self):
         client = ControlPlaneClient(self.base)

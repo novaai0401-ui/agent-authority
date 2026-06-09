@@ -233,6 +233,29 @@ test("tenant-scoped mode refuses the unscoped audit list", async () => {
   );
 });
 
+test("rate limiting uses the server clock, ignoring a hostile client now", async () => {
+  await withControlPlane(async (base) => {
+    const hit = (extra: object) =>
+      fetch(`${base}/v1/rate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "k|send:email", windowMs: 3_600_000, limit: 1, ...extra }),
+      }).then((r) => r.json() as Promise<{ allowed: boolean }>);
+
+    assert.equal((await hit({})).allowed, true); // first hit allowed
+    // A far-future `now` in the body must NOT slide the window open again.
+    assert.equal((await hit({ now: Number.MAX_SAFE_INTEGER })).allowed, false);
+
+    // Malformed window/limit are rejected.
+    const bad = await fetch(`${base}/v1/rate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "k2", windowMs: 0, limit: 5 }),
+    });
+    assert.equal(bad.status, 400);
+  });
+});
+
 test("consent flow: request stays pending until decided", async () => {
   await withControlPlane(async (base) => {
     const client = new ControlPlaneClient(base);
