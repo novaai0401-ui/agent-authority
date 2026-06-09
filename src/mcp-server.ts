@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";

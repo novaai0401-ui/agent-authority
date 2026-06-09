@@ -18,7 +18,8 @@
   "files": [
     "dist",
     "schemas",
-    "llms.txt"
+    "llms.txt",
+    "QUICKSTART.md"
   ],
   "bin": {
     "behalf": "./dist/cli.js",

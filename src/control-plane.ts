@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
