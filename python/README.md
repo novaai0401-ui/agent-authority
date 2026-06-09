@@ -28,7 +28,7 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 # 4. REVOKE — kills the mandate and its downstream chain
 b.revoke(mandate.id)
 
-# 5. AUDIT — every authorize() wrote a tamper-evident record
+# 5. AUDIT — every authorize() wrote a hash-chained record
 trail = b.audit(mandate.id)
 ```
 

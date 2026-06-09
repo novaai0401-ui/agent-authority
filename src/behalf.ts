@@ -168,9 +168,9 @@ export class Behalf implements Engine {
    * terminal key). Throws if the key is absent — you cannot act on a mandate you
    * only hold the public token for.
    */
-  provePossession(token: MandateToken, delegationKey: KeyObject): Proof {
+  provePossession(token: MandateToken, delegationKey: KeyObject, action: string): Proof {
     const ts = this.now();
-    return { ts, sig: signProof(delegationKey, token.id, token.sigs, ts) };
+    return { ts, sig: signProof(delegationKey, token.id, token.sigs, ts, action) };
   }
 
   /** Holder path: `mandate.authorize()` routes here, minting a PoP from its key. */
@@ -180,7 +180,7 @@ export class Behalf implements Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void> {
     if (!delegationKey) throw new BehalfDelegationError();
-    return this.authorize(token, action, this.provePossession(token, delegationKey));
+    return this.authorize(token, action, this.provePossession(token, delegationKey, action));
   }
 
   /**
@@ -216,7 +216,7 @@ export class Behalf implements Engine {
     if (!proof) return deny("possession proof required");
     if (Math.abs(this.now() - proof.ts) > this.proofSkewMs) return deny("stale possession proof");
     const terminal = importPublicKey(token.blocks[token.blocks.length - 1].nextPub);
-    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, proof.sig)) {
+    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, action, proof.sig)) {
       return deny("invalid possession proof");
     }
 
@@ -301,7 +301,7 @@ export class Behalf implements Engine {
     await this.revocations.revoke(id);
   }
 
-  /** AUDIT — fetch the tamper-evident trail for a mandate's chain. */
+  /** AUDIT — fetch the hash-chained audit trail for a mandate's chain. */
   async audit(id: string): Promise<AuditEntry[]> {
     return this.auditStore.forMandate(id);
   }

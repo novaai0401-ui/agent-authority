@@ -1,9 +1,9 @@
 """Cross-language interop helper: issue a mandate as the Python port.
 
-Prints {"mandate", "pubkey", "proof"} as JSON so a TypeScript verifier can check
-it: the proof is a possession proof of the chain's terminal key. Usage:
+Prints {"mandate", "pubkey", "proofs": {action: proof}} as JSON so a TypeScript
+verifier can check each action with its action-bound possession proof. Usage:
 
-    python3 interop_issue.py <cap> [<narrowed-cap>]
+    python3 interop_issue.py <cap> <narrow|-> <action1,action2,...>
 """
 
 import json
@@ -17,7 +17,8 @@ from behalf import create_behalf  # noqa: E402
 
 def main() -> None:
     cap = sys.argv[1] if len(sys.argv) > 1 else "spend:usd<=50"
-    narrow = sys.argv[2] if len(sys.argv) > 2 else None
+    narrow = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "-" else None
+    actions = sys.argv[3].split(",") if len(sys.argv) > 3 else []
 
     issuer = create_behalf()
     mandate = issuer.grant(principal="py", agent="issuer", can=[cap], expires_in="1h")
@@ -29,7 +30,7 @@ def main() -> None:
             {
                 "mandate": mandate.serialize(),
                 "pubkey": issuer.public_key,
-                "proof": mandate.prove(),
+                "proofs": {a: mandate.prove(a) for a in actions},
             }
         )
     )

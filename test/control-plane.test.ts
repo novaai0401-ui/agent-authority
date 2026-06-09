@@ -41,14 +41,14 @@ test("revocation propagates across engines via the control plane", async () => {
 
     // B (a different engine, same key + shared revocation store) can verify a
     // presentation of the mandate...
-    await assert.doesNotReject(agentB.authorize(mandate.token, "read:calendar", mandate.prove()));
+    await assert.doesNotReject(agentB.authorize(mandate.token, "read:calendar", mandate.prove("read:calendar")));
 
     // ...A revokes through the control plane...
     await agentA.revoke(mandate.id);
 
     // ...and B sees the revocation immediately.
     await assert.rejects(
-      () => agentB.authorize(mandate.token, "read:calendar", mandate.prove()),
+      () => agentB.authorize(mandate.token, "read:calendar", mandate.prove("read:calendar")),
       AuthorizationError,
     );
   });
@@ -119,9 +119,9 @@ test("rate limit is shared across agents via the control plane", async () => {
     // B verifies a presentation for the 3rd; the 4th denies for BOTH engines.
     await assert.doesNotReject(mA.authorize("send:email"));
     await assert.doesNotReject(mA.authorize("send:email"));
-    await assert.doesNotReject(agentB.authorize(mA.token, "send:email", mA.prove()));
+    await assert.doesNotReject(agentB.authorize(mA.token, "send:email", mA.prove("send:email")));
     await assert.rejects(
-      () => agentB.authorize(mA.token, "send:email", mA.prove()),
+      () => agentB.authorize(mA.token, "send:email", mA.prove("send:email")),
       AuthorizationError,
     );
     // ...and A is also blocked — the cap is genuinely shared, not per-process.

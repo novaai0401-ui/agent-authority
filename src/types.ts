@@ -85,7 +85,7 @@ export type AuditFields = Pick<
   "mandateId" | "chain" | "action" | "decision" | "reason" | "issuer"
 >;
 
-/** A single tamper-evident audit record. */
+/** A single hash-chained audit record (integrity-chained; see README Limitations). */
 export interface AuditEntry {
   seq: number;
   ts: number;

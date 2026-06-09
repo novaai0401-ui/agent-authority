@@ -105,19 +105,29 @@ export function importPrivateKey(d: string, x: string): KeyObject {
  * truncation and makes a serialized token NOT a usable bearer credential.
  *
  * The message binds the proof to the EXACT presented chain (id + every block
- * signature) and a timestamp, so it cannot be replayed for a different/truncated
- * token, and only within a short freshness window for the same one. Producing it
- * requires the private key matching `blocks[last].nextPub`, which only the
- * legitimate tail holder has.
+ * signature), the timestamp, AND the action, so it cannot be replayed for a
+ * different/truncated token or reused for a different action, and only within a
+ * short freshness window for the same (token, action). Producing it requires the
+ * private key matching `blocks[last].nextPub`, which only the legitimate tail
+ * holder has. (Over the wire, run under TLS; for single-use guarantees within
+ * the window, layer a verifier-issued nonce.)
  */
-export function proofMessage(id: string, sigs: string[], ts: number): string {
-  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}`;
+export function proofMessage(id: string, sigs: string[], ts: number, action: string): string {
+  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}\n${action}`;
 }
 
-export function signProof(delegationKey: KeyObject, id: string, sigs: string[], ts: number): string {
-  return edSign(null, Buffer.from(proofMessage(id, sigs, ts), "utf8"), delegationKey).toString(
-    "base64url",
-  );
+export function signProof(
+  delegationKey: KeyObject,
+  id: string,
+  sigs: string[],
+  ts: number,
+  action: string,
+): string {
+  return edSign(
+    null,
+    Buffer.from(proofMessage(id, sigs, ts, action), "utf8"),
+    delegationKey,
+  ).toString("base64url");
 }
 
 export function verifyProof(
@@ -125,12 +135,13 @@ export function verifyProof(
   id: string,
   sigs: string[],
   ts: number,
+  action: string,
   sig: string,
 ): boolean {
   try {
     return edVerify(
       null,
-      Buffer.from(proofMessage(id, sigs, ts), "utf8"),
+      Buffer.from(proofMessage(id, sigs, ts, action), "utf8"),
       terminalPub,
       Buffer.from(sig, "base64url"),
     );

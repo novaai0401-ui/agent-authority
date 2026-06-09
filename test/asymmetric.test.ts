@@ -15,9 +15,9 @@ test("a separate verifier checks a presented mandate with only the issuer public
   // The verifier holds NO secret — just the issuer's public key. The holder
   // presents the token plus a proof of possession of its terminal key.
   const verifier = createBehalf({ trust: [issuer.publicKey] });
-  await assert.doesNotReject(verifier.authorize(mandate.token, "spend:usd=20", mandate.prove()));
+  await assert.doesNotReject(verifier.authorize(mandate.token, "spend:usd=20", mandate.prove("spend:usd=20")));
   await assert.rejects(
-    () => verifier.authorize(mandate.token, "spend:usd=60", mandate.prove()),
+    () => verifier.authorize(mandate.token, "spend:usd=60", mandate.prove("spend:usd=60")),
     AuthorizationError,
   );
 });
@@ -28,7 +28,7 @@ test("a verifier rejects a mandate from an untrusted issuer", async () => {
 
   const stranger = createBehalf(); // trusts only its own key
   await assert.rejects(
-    () => stranger.authorize(mandate.token, "read:calendar", mandate.prove()),
+    () => stranger.authorize(mandate.token, "read:calendar", mandate.prove("read:calendar")),
     AuthorizationError,
   );
   assert.throws(() => stranger.verifySignature(mandate.token), IntegrityError);
@@ -40,9 +40,9 @@ test("an attenuated chain verifies under the same issuer key", async () => {
   const child = root.attenuate({ can: ["spend:usd<=10"], agent: "a2" });
 
   const verifier = createBehalf({ trust: [issuer.publicKey] });
-  await assert.doesNotReject(verifier.authorize(child.token, "spend:usd=10", child.prove()));
+  await assert.doesNotReject(verifier.authorize(child.token, "spend:usd=10", child.prove("spend:usd=10")));
   await assert.rejects(
-    () => verifier.authorize(child.token, "spend:usd=11", child.prove()),
+    () => verifier.authorize(child.token, "spend:usd=11", child.prove("spend:usd=11")),
     AuthorizationError,
   );
 });
@@ -61,10 +61,10 @@ test("truncating the chain to recover a parent's scope is denied (C-1)", async (
   const verifier = createBehalf({ trust: [issuer.publicKey] });
 
   // Honest use works.
-  await assert.doesNotReject(verifier.authorize(child.token, "read:calendar", child.prove()));
+  await assert.doesNotReject(verifier.authorize(child.token, "read:calendar", child.prove("read:calendar")));
   // The child must not be able to spend (its block dropped that).
   await assert.rejects(
-    () => verifier.authorize(child.token, "spend:usd=50", child.prove()),
+    () => verifier.authorize(child.token, "spend:usd=50", child.prove("spend:usd=50")),
     AuthorizationError,
   );
 
@@ -80,7 +80,7 @@ test("truncating the chain to recover a parent's scope is denied (C-1)", async (
   // possession proof for it (it lacks the root block's terminal key), so any
   // proof it can make is for the full chain and won't match the prefix.
   await assert.rejects(
-    () => verifier.authorize(truncated, "spend:usd=50", child.prove()),
+    () => verifier.authorize(truncated, "spend:usd=50", child.prove("spend:usd=50")),
     AuthorizationError,
   );
   // Even reusing nothing: an empty/no proof is refused outright.

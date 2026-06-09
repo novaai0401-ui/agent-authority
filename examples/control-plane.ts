@@ -3,7 +3,7 @@
  *
  * Two independent agents point at one control plane. When the first revokes a
  * mandate, the second sees it immediately — the "revoke once, propagates
- * everywhere" model. The same plane retains a single tamper-evident audit log.
+ * everywhere" model. The same plane retains a single hash-chained audit log.
  *
  *   npm run build && node dist-test/examples/control-plane.js
  */

@@ -54,7 +54,7 @@ const child = mandate.attenuate({ can: ["read:calendar"], expiresIn: "10m" });
 // 4. REVOKE — kill a mandate and its whole downstream chain, instantly
 await Behalf.revoke(mandate.id);
 
-// 5. AUDIT — every authorize() already wrote a tamper-evident record
+// 5. AUDIT — every authorize() already wrote a hash-chained record
 const trail = await Behalf.audit(mandate.id);
 ```
 
@@ -255,7 +255,8 @@ const behalf = createBehalf({
 ### Control plane (revocation propagation + audit retention)
 
 For multi-agent deployments, the control plane centralizes revocation (revoke
-once, every agent sees it), retains one tamper-evident audit log, and offers a
+once, every agent sees it), retains one hash-chained audit log (integrity-
+chained; see Limitations for its threat model), and offers a
 consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
 same stores — point agents at it with the `behalf/remote` client stores and the
 five-verb API is unchanged.

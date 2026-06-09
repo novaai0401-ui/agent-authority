@@ -12,7 +12,7 @@ export interface Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void>;
   attenuate(token: MandateToken, delegationKey: KeyObject | undefined, opts: AttenuateOptions): Mandate;
-  provePossession(token: MandateToken, delegationKey: KeyObject): Proof;
+  provePossession(token: MandateToken, delegationKey: KeyObject, action: string): Proof;
   revoke(id: string): Promise<void>;
   audit(id: string): Promise<AuditEntry[]>;
 }
@@ -102,15 +102,16 @@ export class Mandate {
   }
 
   /**
-   * Mint a fresh proof of possession for presenting this mandate across a trust
-   * boundary (e.g. an A2A call). Requires the delegation key, so only the
-   * legitimate holder can produce it.
+   * Mint a fresh proof of possession for performing `action`, to present this
+   * mandate across a trust boundary (e.g. an A2A call). Bound to the action and
+   * the exact chain. Requires the delegation key, so only the legitimate holder
+   * can produce it.
    */
-  prove(): Proof {
+  prove(action: string): Proof {
     if (!this.delegationKey) {
       throw new Error("cannot prove possession: this mandate was imported without its key");
     }
-    return this.engine.provePossession(this.token, this.delegationKey);
+    return this.engine.provePossession(this.token, this.delegationKey, action);
   }
 
   /** Revoke this mandate and its entire downstream chain. */
@@ -118,7 +119,7 @@ export class Mandate {
     return this.engine.revoke(this.id);
   }
 
-  /** This mandate's tamper-evident audit trail. */
+  /** This mandate's hash-chained audit trail. */
   audit(): Promise<AuditEntry[]> {
     return this.engine.audit(this.id);
   }

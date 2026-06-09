@@ -93,7 +93,7 @@ class MandateTests(unittest.TestCase):
         restored = b.import_(m.serialize())
         self.assertEqual(restored.id, m.id)
         # The restored public token authorizes when the holder presents a proof.
-        b.authorize(restored.token, "read:calendar", m.prove())
+        b.authorize(restored.token, "read:calendar", m.prove("read:calendar"))
 
     def test_rate_limit(self):
         clock = {"now": 0}
@@ -169,7 +169,7 @@ class DelegationTests(unittest.TestCase):
             "rootPub": child.token["rootPub"],
         }
         with self.assertRaises(AuthorizationError):
-            b.authorize(truncated, "spend:usd=50", child.prove())
+            b.authorize(truncated, "spend:usd=50", child.prove("spend:usd=50"))
 
 
 class RevocationTests(unittest.TestCase):
@@ -236,25 +236,25 @@ class AsymmetricTests(unittest.TestCase):
         m = issuer.grant(principal="u", agent="a", can=["spend:usd<=50"], expires_in="1h")
         verifier = create_behalf(trust=[issuer.public_key])
         # Holder presents token + proof of possession; verifier holds no secret.
-        verifier.authorize(m.token, "spend:usd=20", m.prove())
+        verifier.authorize(m.token, "spend:usd=20", m.prove("spend:usd=20"))
         with self.assertRaises(AuthorizationError):
-            verifier.authorize(m.token, "spend:usd=60", m.prove())
+            verifier.authorize(m.token, "spend:usd=60", m.prove("spend:usd=60"))
 
     def test_untrusted_issuer_rejected(self):
         issuer = create_behalf()
         m = issuer.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
         stranger = create_behalf()
         with self.assertRaises(AuthorizationError):
-            stranger.authorize(m.token, "read:calendar", m.prove())
+            stranger.authorize(m.token, "read:calendar", m.prove("read:calendar"))
 
     def test_attenuated_chain_verifies(self):
         issuer = create_behalf()
         root = issuer.grant(principal="u", agent="a1", can=["spend:usd<=50"], expires_in="1h")
         child = root.attenuate(can=["spend:usd<=10"], agent="a2")
         verifier = create_behalf(trust=[issuer.public_key])
-        verifier.authorize(child.token, "spend:usd=10", child.prove())
+        verifier.authorize(child.token, "spend:usd=10", child.prove("spend:usd=10"))
         with self.assertRaises(AuthorizationError):
-            verifier.authorize(child.token, "spend:usd=11", child.prove())
+            verifier.authorize(child.token, "spend:usd=11", child.prove("spend:usd=11"))
 
     def test_imported_cannot_delegate_or_authorize(self):
         issuer = create_behalf()

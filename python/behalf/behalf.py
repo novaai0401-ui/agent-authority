@@ -140,16 +140,19 @@ class Behalf:
         }
         return Mandate(new_token, self, nxt.private)
 
-    def prove_possession(self, token: dict, delegation_key: str) -> dict:
-        """Mint a proof of possession of the chain's terminal key."""
+    def prove_possession(self, token: dict, delegation_key: str, action: str) -> dict:
+        """Mint a proof of possession of the chain's terminal key, bound to action."""
         ts = self._now()
-        return {"ts": ts, "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts)}
+        return {
+            "ts": ts,
+            "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts, action),
+        }
 
     def authorize_as_holder(self, token: dict, action: str, delegation_key: Optional[str]) -> None:
         """Holder path: ``mandate.authorize()`` routes here, minting a PoP."""
         if delegation_key is None:
             raise DelegationError()
-        self.authorize(token, action, self.prove_possession(token, delegation_key))
+        self.authorize(token, action, self.prove_possession(token, delegation_key, action))
 
     def authorize(self, token: dict, action: str, proof: Optional[dict] = None) -> None:
         """Verify token + proof of possession of the terminal key, then the action.
@@ -182,7 +185,9 @@ class Behalf:
         if abs(self._now() - int(proof.get("ts", 0))) > self._proof_skew_ms:
             return deny("stale possession proof")
         terminal = token["blocks"][-1]["nextPub"]
-        if not verify_proof(terminal, token["id"], token["sigs"], int(proof["ts"]), proof["sig"]):
+        if not verify_proof(
+            terminal, token["id"], token["sigs"], int(proof["ts"]), action, proof["sig"]
+        ):
             return deny("invalid possession proof")
 
         # 3. Revocation + expiry + scope (shared with inspect()).

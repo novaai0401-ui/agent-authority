@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Behalf } from "./behalf.js";
 import { Mandate } from "./mandate.js";
+import { permits } from "./capability.js";
 import { AuthorizationError } from "./errors.js";
 import type { AttenuateOptions, Proof } from "./types.js";
 
@@ -24,21 +25,28 @@ export const MANDATE_HEADER = "x-behalf-mandate";
 /** Header carrying the caller's proof of possession (anti-truncation / replay). */
 export const PROOF_HEADER = "x-behalf-proof";
 
+/** Header carrying the caller's declared action (the proof is bound to it). */
+export const ACTION_HEADER = "x-behalf-action";
+
 export interface PresentOptions {
+  /** The concrete action the caller intends — the proof is bound to it. */
+  action: string;
   /** Narrow the mandate before sending, so the callee gets less authority. */
   attenuate?: AttenuateOptions;
 }
 
 /**
  * Build the headers that carry a mandate to a downstream agent: the serialized
- * (optionally attenuated) token plus a fresh proof of possession of its terminal
- * key. The callee verifies both, so a truncated or intercepted token is useless.
+ * (optionally attenuated) token, the caller's declared action, and a fresh proof
+ * of possession bound to that action and the exact chain. The callee verifies
+ * all three, so a truncated, intercepted, or repurposed token is useless.
  */
-export function present(mandate: Mandate, opts: PresentOptions = {}): Record<string, string> {
+export function present(mandate: Mandate, opts: PresentOptions): Record<string, string> {
   const outgoing = opts.attenuate ? mandate.attenuate(opts.attenuate) : mandate;
-  const proof = outgoing.prove();
+  const proof = outgoing.prove(opts.action);
   return {
     [MANDATE_HEADER]: outgoing.serialize(),
+    [ACTION_HEADER]: opts.action,
     [PROOF_HEADER]: Buffer.from(JSON.stringify(proof), "utf8").toString("base64url"),
   };
 }
@@ -48,7 +56,7 @@ export function behalfFetch(
   input: string | URL,
   mandate: Mandate,
   init: RequestInit = {},
-  presentOpts: PresentOptions = {},
+  presentOpts: PresentOptions = { action: "" },
 ): Promise<Response> {
   const headers = { ...(init.headers as Record<string, string>), ...present(mandate, presentOpts) };
   return fetch(input, { ...init, headers });
@@ -79,15 +87,23 @@ export async function authorizeIncoming(
   if (!raw) throw new AuthorizationError(capability, "no mandate presented");
   const proofRaw = headerValue(headers, PROOF_HEADER);
   if (!proofRaw) throw new AuthorizationError(capability, "no possession proof presented");
+  const declaredAction = headerValue(headers, ACTION_HEADER);
+  if (!declaredAction) throw new AuthorizationError(capability, "no declared action presented");
   let proof: Proof;
   try {
     proof = JSON.parse(Buffer.from(proofRaw, "base64url").toString("utf8")) as Proof;
   } catch {
     throw new AuthorizationError(capability, "malformed possession proof");
   }
+  // The caller's declared action (which the proof is bound to) must satisfy what
+  // this route requires — so it can't prove a benign action and perform another.
+  if (!permits(capability, declaredAction)) {
+    throw new AuthorizationError(capability, `declared action "${declaredAction}" exceeds route`);
+  }
   const mandate = engine.import(raw);
-  // Verifies the chain, the proof of possession, scope, expiry, and revocation.
-  await engine.authorize(mandate.token, capability, proof);
+  // Verifies the chain, the proof of possession (bound to declaredAction), scope,
+  // expiry, and revocation; audits under the concrete declared action.
+  await engine.authorize(mandate.token, declaredAction, proof);
   return mandate;
 }
 
