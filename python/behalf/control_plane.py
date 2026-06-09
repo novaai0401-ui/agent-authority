@@ -39,8 +39,7 @@ def _list_revoked(store) -> list:
     return sorted(getattr(store, "_revoked", set()))
 
 
-def _dashboard(revocations, recent, consents) -> str:
-    revoked = _list_revoked(revocations)
+def _dashboard(revoked, recent, consents) -> str:
     pending = [c for c in consents if c["status"] == "pending"]
     rev_rows = "".join(f"<tr><td><code>{_esc(i)}</code></td></tr>" for i in revoked) or "<tr><td>none</td></tr>"
     pend_rows = (
@@ -162,8 +161,15 @@ class ControlPlane:
                 issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 if path == "/":
+                    # A tenant only sees its own audit; shared revocation/consent
+                    # views are withheld so the dashboard can't leak across tenants.
+                    if issuer_scope:
+                        recent = list(reversed(cp.audit.for_issuer(issuer_scope)[-20:]))
+                        return self._send_html(_dashboard([], recent, []))
                     recent = [] if cp.tenant_scoped else list(reversed(cp.audit.all()[-20:]))
-                    return self._send_html(_dashboard(cp.revocations, recent, cp.consents.list()))
+                    return self._send_html(
+                        _dashboard(_list_revoked(cp.revocations), recent, cp.consents.list())
+                    )
                 if path == "/v1/revoked":
                     return self._send(200, {"ids": _list_revoked(cp.revocations)})
                 m = re.match(r"^/v1/revoked/(.+)$", path)

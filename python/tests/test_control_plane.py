@@ -266,6 +266,38 @@ class PerTenantTests(unittest.TestCase):
             cp.close()
 
 
+class DashboardScopingTests(unittest.TestCase):
+    def test_dashboard_does_not_leak_other_tenant_audit(self):
+        import urllib.request
+
+        from behalf.crypto import new_key_pair
+
+        kp_a = new_key_pair()
+        kp_b = new_key_pair()
+        cp = create_control_plane(
+            tenants={"tokA": kp_a.public, "tokB": kp_b.public}, token="admintok"
+        )
+        port = cp.listen(0)
+        base = f"http://127.0.0.1:{port}"
+        try:
+            a = create_behalf(root_key_pair=kp_a, audit=HttpAuditStore(base, token="tokA"))
+            b = create_behalf(root_key_pair=kp_b, audit=HttpAuditStore(base, token="tokB"))
+            a.grant(principal="a", agent="x", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+            b.grant(principal="b", agent="y", can=["read:repo/secret-b"], expires_in="1h").authorize("read:repo/secret-b")
+
+            def dash(token):
+                req = urllib.request.Request(f"{base}/", headers={"authorization": f"Bearer {token}"})
+                with urllib.request.urlopen(req) as r:
+                    return r.read().decode()
+
+            a_html = dash("tokA")
+            self.assertIn("read:calendar", a_html)
+            self.assertNotIn("read:repo/secret-b", a_html)
+            self.assertIn("read:repo/secret-b", dash("admintok"))
+        finally:
+            cp.close()
+
+
 class TokenTests(unittest.TestCase):
     def test_bearer_token_enforced(self):
         import urllib.error

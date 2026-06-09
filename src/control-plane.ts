@@ -102,9 +102,15 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
 
     // ---- Dashboard ----
     if (method === "GET" && path === "/") {
-      // In tenant-scoped mode the global audit view is withheld.
+      // A tenant only ever sees its own audit; the shared revocation/consent
+      // views are withheld so the dashboard can't leak across tenants.
+      if (callerIssuer) {
+        const recent = (await audit.forIssuer(callerIssuer)).slice(-20).reverse();
+        return sendHtml(res, dashboard([], recent, []));
+      }
+      // Admin / single-trust-domain: full view (withheld under tenantScoped).
       const recent = options.tenantScoped ? [] : (await audit.all()).slice(-20).reverse();
-      return sendHtml(res, dashboard(revocations, recent, await consents.list()));
+      return sendHtml(res, dashboard(listRevoked(revocations), recent, await consents.list()));
     }
 
     // ---- Revocation ----
@@ -298,11 +304,10 @@ function esc(s: unknown): string {
 }
 
 function dashboard(
-  revocations: RevocationStore,
+  revoked: string[],
   recent: AuditEntry[],
   consents: ConsentRecord[],
 ): string {
-  const revoked = listRevoked(revocations);
   const pending = consents.filter((c) => c.status === "pending");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Behalf Control Plane</title>

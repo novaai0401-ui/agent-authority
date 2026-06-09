@@ -188,6 +188,33 @@ test("per-tenant tokens isolate audit by authenticated identity", async () => {
   );
 });
 
+test("the dashboard does not leak another tenant's audit", async () => {
+  const kpA = newKeyPair();
+  const kpB = newKeyPair();
+  const issuerA = exportPublicKey(kpA.publicKey);
+  const issuerB = exportPublicKey(kpB.publicKey);
+
+  await withControlPlane(
+    async (base) => {
+      const a = createBehalf({ rootKeyPair: kpA, audit: new HttpAuditStore(base, { token: "tokA" }) });
+      const b = createBehalf({ rootKeyPair: kpB, audit: new HttpAuditStore(base, { token: "tokB" }) });
+      await a.grant({ principal: "a", agent: "x", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+      await b.grant({ principal: "b", agent: "y", can: ["read:repo/secret-b"], expiresIn: "1h" }).authorize("read:repo/secret-b");
+
+      // Tenant A loads the dashboard: it must show A's action, never B's.
+      const aHtml = await (await fetch(`${base}/`, { headers: { authorization: "Bearer tokA" } })).text();
+      assert.match(aHtml, /read:calendar/);
+      assert.doesNotMatch(aHtml, /read:repo\/secret-b/);
+      assert.doesNotMatch(aHtml, new RegExp(issuerB.slice(0, 16)));
+
+      // The admin still sees everything.
+      const adminHtml = await (await fetch(`${base}/`, { headers: { authorization: "Bearer admintok" } })).text();
+      assert.match(adminHtml, /read:repo\/secret-b/);
+    },
+    { tenants: { tokA: issuerA, tokB: issuerB }, token: "admintok" },
+  );
+});
+
 test("tenant-scoped mode refuses the unscoped audit list", async () => {
   await withControlPlane(
     async (base) => {
