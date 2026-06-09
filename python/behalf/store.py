@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol
+import time
+from typing import Callable, Optional, Protocol
 
 
 class RevocationStore(Protocol):
@@ -70,6 +71,39 @@ class MemoryRevocationStore:
 
     def is_revoked(self, id: str) -> bool:
         return id in self._revoked
+
+
+class CachingRevocationStore:
+    """Bounded cache over another RevocationStore (mirrors the TS version).
+
+    Revocation is monotonic, so a *revoked* answer is cached forever while a
+    *not-revoked* answer is cached only for ``ttl_ms`` -- a bounded staleness
+    window in exchange for far fewer network checks per authorize()."""
+
+    def __init__(self, inner, *, ttl_ms: int, now: Optional[Callable[[], int]] = None) -> None:
+        self._inner = inner
+        self._ttl = ttl_ms
+        self._now = now or (lambda: int(time.time() * 1000))
+        self._revoked: set[str] = set()
+        self._fresh: dict[str, int] = {}
+
+    def revoke(self, id: str) -> None:
+        self._inner.revoke(id)
+        self._revoked.add(id)
+        self._fresh.pop(id, None)
+
+    def is_revoked(self, id: str) -> bool:
+        if id in self._revoked:
+            return True
+        until = self._fresh.get(id)
+        if until is not None and self._now() < until:
+            return False
+        revoked = self._inner.is_revoked(id)
+        if revoked:
+            self._revoked.add(id)
+        else:
+            self._fresh[id] = self._now() + self._ttl
+        return revoked
 
 
 class MemoryRateStore:

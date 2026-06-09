@@ -45,11 +45,13 @@ export {
   MemoryRateStore,
   MemoryConsentStore,
   MemoryPolicyStore,
+  CachingRevocationStore,
   type RevocationStore,
   type AuditStore,
   type RateStore,
   type ConsentStore,
   type PolicyStore,
+  type CacheOptions,
 } from "./store.js";
 export {
   FileRevocationStore,

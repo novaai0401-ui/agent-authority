@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 75 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 79 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -264,6 +264,10 @@ const behalf = createBehalf({
 });
 // revoke(id) propagates to every agent; audit is sealed centrally (race-free);
 // and a `rate<=N/h` cap is enforced ONCE across all agents, not per process.
+
+// Optional: cache revocation checks with a bounded staleness window.
+// import { CachingRevocationStore } from "behalf";
+// revocations: new CachingRevocationStore(new HttpRevocationStore(url), { ttlMs: 5000 })
 ```
 
 ### Cross-language interop
@@ -284,7 +288,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 48 tests, zero dependencies
+python3 -m unittest discover -s tests   # 51 tests, zero dependencies
 ```
 
 ```python
@@ -334,10 +338,11 @@ Honest about what this reference implementation does *not* yet do:
   log to any holder of the (optional) bearer token — there is no per-tenant or
   per-issuer scoping yet. Run one control plane per trust domain, or wait for
   multi-tenant namespacing.
-- **Revocation/rate checks hit the network each call.** `HttpRevocationStore` and
-  `HttpRateStore` consult the control plane on every `authorize()`; there is no
-  client cache. Signature, scope, and expiry are still fully offline — only the
-  shared checks are remote. Roadmap: short-TTL caching with a staleness bound.
+- **Shared rate checks hit the network each call.** `HttpRateStore` must consult
+  the control plane on every `authorize()` (the cap is authoritative and can't be
+  cached). Revocation, by contrast, can be wrapped in `CachingRevocationStore` for
+  a bounded staleness window — a revoked answer is cached forever, a not-revoked
+  answer for `ttlMs`. Signature, scope, and expiry are always fully offline.
 - **Cross-language delegation is verify-only.** A mandate issued in one port
   verifies/authorizes in the other, but attenuation needs the in-memory
   delegation key, so delegate within the issuing port.

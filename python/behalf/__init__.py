@@ -45,6 +45,7 @@ from .remote import (
 )
 from .store import (
     AuditStore,
+    CachingRevocationStore,
     ConsentStore,
     MemoryAuditStore,
     MemoryConsentStore,
@@ -87,6 +88,7 @@ __all__ = [
     "FilePolicyStore",
     "MemoryConsentStore",
     "MemoryPolicyStore",
+    "CachingRevocationStore",
     "ConsentStore",
     "PolicyStore",
     "ControlPlane",

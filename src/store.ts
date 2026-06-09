@@ -85,6 +85,54 @@ export class MemoryRevocationStore implements RevocationStore {
   }
 }
 
+export interface CacheOptions {
+  /** How long a "not revoked" answer may be reused before re-checking. */
+  ttlMs: number;
+  /** Override the clock — handy for tests. */
+  now?: () => number;
+}
+
+/**
+ * Wraps another {@link RevocationStore} (typically the networked
+ * `HttpRevocationStore`) with a bounded cache, so a hot mandate isn't
+ * re-checked over the network on every `authorize()`.
+ *
+ * Safe by construction: revocation is monotonic, so a *revoked* answer is cached
+ * forever, while a *not-revoked* answer is cached only for `ttlMs`. The cost is
+ * a bounded staleness window — a mandate revoked elsewhere may still pass for up
+ * to `ttlMs`. This is exactly the "short TTL + revocation check" trade-off; keep
+ * the TTL small (seconds) for tight revocation, larger to cut traffic.
+ */
+export class CachingRevocationStore implements RevocationStore {
+  private readonly revoked = new Set<string>();
+  private readonly freshUntil = new Map<string, number>();
+  private readonly now: () => number;
+
+  constructor(
+    private readonly inner: RevocationStore,
+    private readonly opts: CacheOptions,
+  ) {
+    this.now = opts.now ?? (() => Date.now());
+  }
+
+  async revoke(id: string): Promise<void> {
+    await this.inner.revoke(id);
+    this.revoked.add(id);
+    this.freshUntil.delete(id);
+  }
+
+  async isRevoked(id: string): Promise<boolean> {
+    if (this.revoked.has(id)) return true;
+    const until = this.freshUntil.get(id);
+    if (until !== undefined && this.now() < until) return false;
+
+    const revoked = await this.inner.isRevoked(id);
+    if (revoked) this.revoked.add(id);
+    else this.freshUntil.set(id, this.now() + this.opts.ttlMs);
+    return revoked;
+  }
+}
+
 export class MemoryRateStore implements RateStore {
   private readonly hits = new Map<string, number[]>();
   hit(key: string, windowMs: number, limit: number, now: number): boolean {

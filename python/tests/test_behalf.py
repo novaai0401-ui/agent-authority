@@ -247,6 +247,54 @@ class AsymmetricTests(unittest.TestCase):
             imported.attenuate(can=["read:calendar"])
 
 
+class CachingRevocationTests(unittest.TestCase):
+    def _counting_inner(self, revoked=None):
+        revoked = revoked if revoked is not None else set()
+        calls = {"is_revoked": 0, "revoke": 0}
+
+        class Inner:
+            def revoke(self, id):
+                calls["revoke"] += 1
+                revoked.add(id)
+
+            def is_revoked(self, id):
+                calls["is_revoked"] += 1
+                return id in revoked
+
+        return Inner(), calls, revoked
+
+    def test_not_revoked_cached_within_ttl(self):
+        from behalf.store import CachingRevocationStore
+
+        clock = {"t": 0}
+        inner, calls, _ = self._counting_inner()
+        cache = CachingRevocationStore(inner, ttl_ms=1000, now=lambda: clock["t"])
+        self.assertFalse(cache.is_revoked("m"))
+        self.assertFalse(cache.is_revoked("m"))
+        self.assertEqual(calls["is_revoked"], 1)
+        clock["t"] = 1001
+        self.assertFalse(cache.is_revoked("m"))
+        self.assertEqual(calls["is_revoked"], 2)
+
+    def test_revoked_cached_permanently(self):
+        from behalf.store import CachingRevocationStore
+
+        inner, calls, revoked = self._counting_inner({"bad"})
+        cache = CachingRevocationStore(inner, ttl_ms=1000)
+        self.assertTrue(cache.is_revoked("bad"))
+        self.assertTrue(cache.is_revoked("bad"))
+        self.assertEqual(calls["is_revoked"], 1)
+
+    def test_revoke_write_through_and_invalidate(self):
+        from behalf.store import CachingRevocationStore
+
+        inner, calls, _ = self._counting_inner()
+        cache = CachingRevocationStore(inner, ttl_ms=60000)
+        self.assertFalse(cache.is_revoked("y"))
+        cache.revoke("y")
+        self.assertTrue(cache.is_revoked("y"))
+
+
 class LintTests(unittest.TestCase):
     def test_clean_scope(self):
         self.assertEqual(lint(["read:calendar", "spend:usd<=50"]), [])
