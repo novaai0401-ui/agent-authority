@@ -29,6 +29,9 @@ from .errors import (
     WideningError,
 )
 from .mandate import Mandate
+from .persist import FileAuditStore, FileRevocationStore
+from .control_plane import ControlPlane, create_control_plane
+from .remote import ControlPlaneClient, HttpAuditStore, HttpRevocationStore
 from .store import (
     AuditStore,
     MemoryAuditStore,
@@ -59,4 +62,11 @@ __all__ = [
     "MemoryAuditStore",
     "RevocationStore",
     "AuditStore",
+    "FileRevocationStore",
+    "FileAuditStore",
+    "ControlPlane",
+    "create_control_plane",
+    "HttpRevocationStore",
+    "HttpAuditStore",
+    "ControlPlaneClient",
 ]
