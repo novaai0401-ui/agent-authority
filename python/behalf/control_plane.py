@@ -16,7 +16,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import unquote, urlparse
 
-from .store import MemoryAuditStore, MemoryRateStore, MemoryRevocationStore
+from .store import (
+    MemoryAuditStore,
+    MemoryConsentStore,
+    MemoryPolicyStore,
+    MemoryRateStore,
+    MemoryRevocationStore,
+)
 
 
 def _esc(s) -> str:
@@ -36,7 +42,7 @@ def _list_revoked(store) -> list:
 def _dashboard(revocations, audit, consents) -> str:
     revoked = _list_revoked(revocations)
     recent = list(reversed(audit.all()[-20:]))
-    pending = [c for c in consents.values() if c["status"] == "pending"]
+    pending = [c for c in consents if c["status"] == "pending"]
     rev_rows = "".join(f"<tr><td><code>{_esc(i)}</code></td></tr>" for i in revoked) or "<tr><td>none</td></tr>"
     pend_rows = (
         "".join(
@@ -67,13 +73,22 @@ def _dashboard(revocations, audit, consents) -> str:
 
 
 class ControlPlane:
-    def __init__(self, *, revocations=None, audit=None, rate=None, token: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        *,
+        revocations=None,
+        audit=None,
+        rate=None,
+        consents=None,
+        policies=None,
+        token: Optional[str] = None,
+    ) -> None:
         self.revocations = revocations or MemoryRevocationStore()
         self.audit = audit or MemoryAuditStore()
         self.rate = rate or MemoryRateStore()
         self.token = token
-        self.consents: dict = {}
-        self.policies: dict = {}
+        self.consents = consents or MemoryConsentStore()
+        self.policies = policies or MemoryPolicyStore()
         self._server: Optional[ThreadingHTTPServer] = None
         # The HTTP server is threaded, so serialize audit writes to keep the
         # hash chain race-free (the control plane is the single logical writer).
@@ -132,7 +147,7 @@ class ControlPlane:
                     return self._send(401, {"error": "unauthorized"})
                 path = urlparse(self.path).path
                 if path == "/":
-                    return self._send_html(_dashboard(cp.revocations, cp.audit, cp.consents))
+                    return self._send_html(_dashboard(cp.revocations, cp.audit, cp.consents.list()))
                 if path == "/v1/revoked":
                     return self._send(200, {"ids": _list_revoked(cp.revocations)})
                 m = re.match(r"^/v1/revoked/(.+)$", path)
@@ -144,7 +159,7 @@ class ControlPlane:
                 if m:
                     return self._send(200, {"entries": cp.audit.for_mandate(unquote(m.group(1)))})
                 if path == "/v1/consent":
-                    return self._send(200, {"consents": list(cp.consents.values())})
+                    return self._send(200, {"consents": cp.consents.list()})
                 m = re.match(r"^/v1/consent/([^/]+)$", path)
                 if m:
                     rec = cp.consents.get(m.group(1))
@@ -153,8 +168,8 @@ class ControlPlane:
                 if m:
                     name = m.group(1)
                     return (
-                        self._send(200, {"name": name, "policy": cp.policies[name]})
-                        if name in cp.policies
+                        self._send(200, {"name": name, "policy": cp.policies.get(name)})
+                        if cp.policies.has(name)
                         else self._send(404, {"error": "not found"})
                     )
                 return self._send(404, {"error": f"no route for GET {path}"})
@@ -198,7 +213,7 @@ class ControlPlane:
                         "status": "pending",
                         "createdAt": int(time.time() * 1000),
                     }
-                    cp.consents[cid] = rec
+                    cp.consents.put(rec)
                     return self._send(201, rec)
                 if path == "/v1/rate":
                     if not body.get("key"):
@@ -218,6 +233,7 @@ class ControlPlane:
                         return self._send(404, {"error": "not found"})
                     rec["status"] = "approved" if body.get("approve") else "denied"
                     rec["decidedAt"] = int(time.time() * 1000)
+                    cp.consents.put(rec)
                     return self._send(200, rec)
                 return self._send(404, {"error": f"no route for POST {path}"})
 
@@ -229,12 +245,21 @@ class ControlPlane:
                 if m:
                     body = self._read_json() or {}
                     name = m.group(1)
-                    cp.policies[name] = body.get("policy", body)
-                    return self._send(200, {"name": name, "policy": cp.policies[name]})
+                    cp.policies.set(name, body.get("policy", body))
+                    return self._send(200, {"name": name, "policy": cp.policies.get(name)})
                 return self._send(404, {"error": f"no route for PUT {path}"})
 
         return Handler
 
 
-def create_control_plane(*, revocations=None, audit=None, token: Optional[str] = None) -> ControlPlane:
-    return ControlPlane(revocations=revocations, audit=audit, token=token)
+def create_control_plane(
+    *, revocations=None, audit=None, rate=None, consents=None, policies=None, token: Optional[str] = None
+) -> ControlPlane:
+    return ControlPlane(
+        revocations=revocations,
+        audit=audit,
+        rate=rate,
+        consents=consents,
+        policies=policies,
+        token=token,
+    )

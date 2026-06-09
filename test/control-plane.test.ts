@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createControlPlane } from "../src/control-plane.js";
 import {
   HttpRevocationStore,
@@ -201,6 +204,47 @@ test("the control plane enforces its bearer token", async () => {
     },
     { token: "s3cret" },
   );
+});
+
+test("consent and policy survive a control-plane restart (file-backed)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "behalf-cp-"));
+  try {
+    const { FileConsentStore, FilePolicyStore } = await import("../src/persist.js");
+    const consentsPath = join(dir, "consents.json");
+    const policiesPath = join(dir, "policies.json");
+
+    // First control plane: create a consent + a policy, then shut down.
+    const cp1 = createControlPlane({
+      consents: new FileConsentStore(consentsPath),
+      policies: new FilePolicyStore(policiesPath),
+    });
+    const port1 = await cp1.listen(0);
+    const base1 = `http://127.0.0.1:${port1}`;
+    const client1 = new ControlPlaneClient(base1);
+    const { id } = await client1.requestConsent("agent-1", "write:email");
+    await client1.decideConsent(id, true);
+    await client1.putPolicy("research-agent", { send_email: "write:email" });
+    await cp1.close();
+
+    // Second control plane over the SAME files: state is still there.
+    const cp2 = createControlPlane({
+      consents: new FileConsentStore(consentsPath),
+      policies: new FilePolicyStore(policiesPath),
+    });
+    const port2 = await cp2.listen(0);
+    const base2 = `http://127.0.0.1:${port2}`;
+    const client2 = new ControlPlaneClient(base2);
+    try {
+      assert.equal((await client2.getConsent(id)).status, "approved");
+      assert.deepEqual((await client2.getPolicy("research-agent")).policy, {
+        send_email: "write:email",
+      });
+    } finally {
+      await cp2.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the dashboard renders HTML", async () => {

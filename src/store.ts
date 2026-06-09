@@ -1,5 +1,5 @@
 import { seal } from "./audit.js";
-import type { AuditEntry, AuditFields } from "./types.js";
+import type { AuditEntry, AuditFields, ConsentRecord } from "./types.js";
 
 /**
  * Pluggable persistence. Defaults are in-memory and local-first, so the library
@@ -33,6 +33,46 @@ export interface AuditStore {
   /** Entries whose chain includes `mandateId`, in order. */
   forMandate(mandateId: string): Promise<AuditEntry[]> | AuditEntry[];
   all(): Promise<AuditEntry[]> | AuditEntry[];
+}
+
+/** Storage for just-in-time consent records (control plane). */
+export interface ConsentStore {
+  put(record: ConsentRecord): Promise<void> | void;
+  get(id: string): Promise<ConsentRecord | undefined> | ConsentRecord | undefined;
+  list(): Promise<ConsentRecord[]> | ConsentRecord[];
+}
+
+/** Storage for named tool→capability policies (control plane). */
+export interface PolicyStore {
+  set(name: string, policy: unknown): Promise<void> | void;
+  get(name: string): Promise<unknown> | unknown;
+  has(name: string): Promise<boolean> | boolean;
+}
+
+export class MemoryConsentStore implements ConsentStore {
+  private readonly records = new Map<string, ConsentRecord>();
+  put(record: ConsentRecord): void {
+    this.records.set(record.id, record);
+  }
+  get(id: string): ConsentRecord | undefined {
+    return this.records.get(id);
+  }
+  list(): ConsentRecord[] {
+    return [...this.records.values()];
+  }
+}
+
+export class MemoryPolicyStore implements PolicyStore {
+  private readonly policies = new Map<string, unknown>();
+  set(name: string, policy: unknown): void {
+    this.policies.set(name, policy);
+  }
+  get(name: string): unknown {
+    return this.policies.get(name);
+  }
+  has(name: string): boolean {
+    return this.policies.has(name);
+  }
 }
 
 export class MemoryRevocationStore implements RevocationStore {

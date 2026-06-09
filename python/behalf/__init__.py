@@ -29,7 +29,12 @@ from .errors import (
     WideningError,
 )
 from .mandate import Mandate
-from .persist import FileAuditStore, FileRevocationStore
+from .persist import (
+    FileAuditStore,
+    FileConsentStore,
+    FilePolicyStore,
+    FileRevocationStore,
+)
 from .control_plane import ControlPlane, create_control_plane
 from .remote import (
     ControlPlaneClient,
@@ -40,9 +45,13 @@ from .remote import (
 )
 from .store import (
     AuditStore,
+    ConsentStore,
     MemoryAuditStore,
+    MemoryConsentStore,
+    MemoryPolicyStore,
     MemoryRateStore,
     MemoryRevocationStore,
+    PolicyStore,
     RateStore,
     RevocationStore,
 )
@@ -74,6 +83,12 @@ __all__ = [
     "RateStore",
     "FileRevocationStore",
     "FileAuditStore",
+    "FileConsentStore",
+    "FilePolicyStore",
+    "MemoryConsentStore",
+    "MemoryPolicyStore",
+    "ConsentStore",
+    "PolicyStore",
     "ControlPlane",
     "create_control_plane",
     "HttpRevocationStore",

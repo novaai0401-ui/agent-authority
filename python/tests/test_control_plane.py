@@ -141,6 +141,36 @@ class ControlPlaneTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             denying.call_tool("send_email", {}, {"mandate": mandate})
 
+    def test_consent_and_policy_persist_across_restart(self):
+        import tempfile
+
+        from behalf.persist import FileConsentStore, FilePolicyStore
+
+        d = tempfile.mkdtemp()
+        consents_path = os.path.join(d, "consents.json")
+        policies_path = os.path.join(d, "policies.json")
+
+        cp1 = create_control_plane(
+            consents=FileConsentStore(consents_path), policies=FilePolicyStore(policies_path)
+        )
+        port1 = cp1.listen(0)
+        c1 = ControlPlaneClient(f"http://127.0.0.1:{port1}")
+        created = c1.request_consent("agent-1", "write:email")
+        c1.decide_consent(created["id"], True)
+        c1.put_policy("research-agent", {"send_email": "write:email"})
+        cp1.close()
+
+        cp2 = create_control_plane(
+            consents=FileConsentStore(consents_path), policies=FilePolicyStore(policies_path)
+        )
+        port2 = cp2.listen(0)
+        c2 = ControlPlaneClient(f"http://127.0.0.1:{port2}")
+        try:
+            self.assertEqual(c2.get_consent(created["id"])["status"], "approved")
+            self.assertEqual(c2.get_policy("research-agent")["policy"], {"send_email": "write:email"})
+        finally:
+            cp2.close()
+
     def test_policy_store(self):
         client = ControlPlaneClient(self.base)
         policy = {"send_email": "write:email"}

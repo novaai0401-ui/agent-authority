@@ -71,3 +71,57 @@ class FileAuditStore:
 
     def for_mandate(self, mandate_id: str) -> list[dict]:
         return [e for e in self.all() if mandate_id in e["chain"]]
+
+
+class FileConsentStore:
+    """Consent records persisted as a JSON object keyed by id."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        _ensure_dir(path)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self._records = json.load(f)
+        else:
+            self._records: dict = {}
+
+    def _flush(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self._records, f)
+
+    def put(self, record: dict) -> None:
+        self._records[record["id"]] = record
+        self._flush()
+
+    def get(self, id: str):
+        return self._records.get(id)
+
+    def list(self) -> list[dict]:
+        return list(self._records.values())
+
+
+class FilePolicyStore:
+    """Named policies persisted as a JSON object keyed by name."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        _ensure_dir(path)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self._policies = json.load(f)
+        else:
+            self._policies: dict = {}
+
+    def _flush(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self._policies, f)
+
+    def set(self, name: str, policy) -> None:
+        self._policies[name] = policy
+        self._flush()
+
+    def get(self, name: str):
+        return self._policies.get(name)
+
+    def has(self, name: str) -> bool:
+        return name in self._policies

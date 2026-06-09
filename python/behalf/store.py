@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Optional, Protocol
 
 
 class RevocationStore(Protocol):
@@ -12,6 +12,46 @@ class RevocationStore(Protocol):
 
 class RateStore(Protocol):
     def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool: ...
+
+
+class ConsentStore(Protocol):
+    def put(self, record: dict) -> None: ...
+    def get(self, id: str) -> Optional[dict]: ...
+    def list(self) -> list[dict]: ...
+
+
+class PolicyStore(Protocol):
+    def set(self, name: str, policy) -> None: ...
+    def get(self, name: str): ...
+    def has(self, name: str) -> bool: ...
+
+
+class MemoryConsentStore:
+    def __init__(self) -> None:
+        self._records: dict[str, dict] = {}
+
+    def put(self, record: dict) -> None:
+        self._records[record["id"]] = record
+
+    def get(self, id: str) -> Optional[dict]:
+        return self._records.get(id)
+
+    def list(self) -> list[dict]:
+        return list(self._records.values())
+
+
+class MemoryPolicyStore:
+    def __init__(self) -> None:
+        self._policies: dict = {}
+
+    def set(self, name: str, policy) -> None:
+        self._policies[name] = policy
+
+    def get(self, name: str):
+        return self._policies.get(name)
+
+    def has(self, name: str) -> bool:
+        return name in self._policies
 
 
 class AuditStore(Protocol):

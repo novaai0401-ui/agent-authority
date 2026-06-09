@@ -93,3 +93,14 @@ export interface AuditIntegrity {
   /** seq of the first broken entry, if any. */
   brokenAt?: number;
 }
+
+/** A just-in-time consent request tracked by the control plane. */
+export interface ConsentRecord {
+  id: string;
+  agent: string;
+  capability: string;
+  context?: Record<string, unknown>;
+  status: "pending" | "approved" | "denied";
+  createdAt: number;
+  decidedAt?: number;
+}

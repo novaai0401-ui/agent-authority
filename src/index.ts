@@ -43,11 +43,20 @@ export {
   MemoryRevocationStore,
   MemoryAuditStore,
   MemoryRateStore,
+  MemoryConsentStore,
+  MemoryPolicyStore,
   type RevocationStore,
   type AuditStore,
   type RateStore,
+  type ConsentStore,
+  type PolicyStore,
 } from "./store.js";
-export { FileRevocationStore, FileAuditStore } from "./persist.js";
+export {
+  FileRevocationStore,
+  FileAuditStore,
+  FileConsentStore,
+  FilePolicyStore,
+} from "./persist.js";
 export {
   createControlPlane,
   type ControlPlane,

@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 74 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 75 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -284,7 +284,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 47 tests, zero dependencies
+python3 -m unittest discover -s tests   # 48 tests, zero dependencies
 ```
 
 ```python
@@ -320,16 +320,16 @@ revocation propagation, audit retention, and consent/policy with a dashboard, an
 Cursor, Copilot, Gemini, GPT, or a custom surface). CI runs both test suites plus
 the interop check on Node 20/22 and Python 3.9/3.12.
 
-The Python port has full parity: control-plane server + client, file
-persistence, shared rate limiting, and the consent provider.
+All control-plane state can be file-backed for durability — revocation, audit,
+and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
+`behalf-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
+port has full parity: control-plane server + client, file persistence, shared
+rate limiting, and the consent provider.
 
 ## Limitations & roadmap
 
 Honest about what this reference implementation does *not* yet do:
 
-- **Control-plane consent & policy are in-memory.** Revocation and audit can be
-  file-backed for durability, but consent records and policies are lost on
-  restart. Roadmap: pluggable durable stores for both.
 - **Single audit scope.** `GET /v1/audit` and the dashboard expose the whole
   log to any holder of the (optional) bearer token — there is no per-tenant or
   per-issuer scoping yet. Run one control plane per trust domain, or wait for

@@ -6,11 +6,17 @@ import {
   MemoryRevocationStore,
   MemoryAuditStore,
   MemoryRateStore,
+  MemoryConsentStore,
+  MemoryPolicyStore,
   type AuditStore,
   type RevocationStore,
   type RateStore,
+  type ConsentStore,
+  type PolicyStore,
 } from "./store.js";
-import type { AuditEntry, AuditFields } from "./types.js";
+import type { AuditEntry, AuditFields, ConsentRecord } from "./types.js";
+
+export type { ConsentRecord } from "./types.js";
 
 /**
  * The Behalf control plane (Phase 2 / open-core hosted surface).
@@ -27,20 +33,14 @@ import type { AuditEntry, AuditFields } from "./types.js";
  * where revocation/audit live moves.
  */
 
-export interface ConsentRecord {
-  id: string;
-  agent: string;
-  capability: string;
-  context?: Record<string, unknown>;
-  status: "pending" | "approved" | "denied";
-  createdAt: number;
-  decidedAt?: number;
-}
-
 export interface ControlPlaneOptions {
   revocations?: RevocationStore;
   audit?: AuditStore;
   rate?: RateStore;
+  /** Consent record storage. Defaults to in-memory; use a file store to persist. */
+  consents?: ConsentStore;
+  /** Named-policy storage. Defaults to in-memory; use a file store to persist. */
+  policies?: PolicyStore;
   /** If set, require `Authorization: Bearer <token>` on every request. */
   token?: string;
 }
@@ -57,8 +57,8 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
   const revocations = options.revocations ?? new MemoryRevocationStore();
   const audit = options.audit ?? new MemoryAuditStore();
   const rate = options.rate ?? new MemoryRateStore();
-  const consents = new Map<string, ConsentRecord>();
-  const policies = new Map<string, unknown>();
+  const consents = options.consents ?? new MemoryConsentStore();
+  const policies = options.policies ?? new MemoryPolicyStore();
   let server: Server | undefined;
 
   const handler = (req: IncomingMessage, res: ServerResponse): void => {
@@ -77,7 +77,7 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
 
     // ---- Dashboard ----
     if (method === "GET" && path === "/") {
-      return sendHtml(res, dashboard(revocations, audit, consents));
+      return sendHtml(res, dashboard(revocations, audit, await consents.list()));
     }
 
     // ---- Revocation ----
@@ -149,24 +149,25 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
         status: "pending",
         createdAt: Date.now(),
       };
-      consents.set(id, record);
+      await consents.put(record);
       return send(res, 201, record);
     }
     if (method === "GET" && path === "/v1/consent") {
-      return send(res, 200, { consents: [...consents.values()] });
+      return send(res, 200, { consents: await consents.list() });
     }
     const consentDecide = method === "POST" && /^\/v1\/consent\/([^/]+)\/decision$/.exec(path);
     if (consentDecide) {
-      const record = consents.get(consentDecide[1]);
+      const record = await consents.get(consentDecide[1]);
       if (!record) return send(res, 404, { error: "not found" });
       const body = await readJson(req);
       record.status = body?.approve ? "approved" : "denied";
       record.decidedAt = Date.now();
+      await consents.put(record);
       return send(res, 200, record);
     }
     const consentGet = method === "GET" && /^\/v1\/consent\/([^/]+)$/.exec(path);
     if (consentGet) {
-      const record = consents.get(consentGet[1]);
+      const record = await consents.get(consentGet[1]);
       return record ? send(res, 200, record) : send(res, 404, { error: "not found" });
     }
 
@@ -175,14 +176,14 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     if (policyMatch) {
       const name = policyMatch[1];
       if (method === "GET") {
-        return policies.has(name)
-          ? send(res, 200, { name, policy: policies.get(name) })
+        return (await policies.has(name))
+          ? send(res, 200, { name, policy: await policies.get(name) })
           : send(res, 404, { error: "not found" });
       }
       if (method === "PUT") {
         const body = await readJson(req);
-        policies.set(name, body?.policy ?? body);
-        return send(res, 200, { name, policy: policies.get(name) });
+        await policies.set(name, body?.policy ?? body);
+        return send(res, 200, { name, policy: await policies.get(name) });
       }
     }
 
@@ -254,12 +255,12 @@ function esc(s: unknown): string {
 function dashboard(
   revocations: RevocationStore,
   audit: AuditStore,
-  consents: Map<string, ConsentRecord>,
+  consents: ConsentRecord[],
 ): string {
   const revoked = listRevoked(revocations);
   const entries = (audit as unknown as { all(): AuditEntry[] | Promise<AuditEntry[]> }).all();
   const recent = Array.isArray(entries) ? entries.slice(-20).reverse() : [];
-  const pending = [...consents.values()].filter((c) => c.status === "pending");
+  const pending = consents.filter((c) => c.status === "pending");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Behalf Control Plane</title>
 <style>body{font:14px system-ui,sans-serif;margin:2rem;max-width:60rem}h1{font-size:1.4rem}
@@ -300,12 +301,15 @@ if (runningAsMain()) {
   void (async () => {
     const { join } = await import("node:path");
     const { homedir } = await import("node:os");
-    const { FileRevocationStore, FileAuditStore } = await import("./persist.js");
+    const { FileRevocationStore, FileAuditStore, FileConsentStore, FilePolicyStore } =
+      await import("./persist.js");
     const home = process.env.BEHALF_HOME ?? join(homedir(), ".behalf");
     const port = Number(process.env.PORT ?? 8787);
     const cp = createControlPlane({
       revocations: new FileRevocationStore(join(home, "revocations.json")),
       audit: new FileAuditStore(join(home, "audit.jsonl")),
+      consents: new FileConsentStore(join(home, "consents.json")),
+      policies: new FilePolicyStore(join(home, "policies.json")),
       token: process.env.BEHALF_TOKEN,
     });
     const bound = await cp.listen(port);
