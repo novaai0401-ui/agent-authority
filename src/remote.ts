@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./types.js";
+import type { AuditEntry, AuditFields } from "./types.js";
 import type { AuditStore, RevocationStore } from "./store.js";
 
 /**
@@ -64,6 +64,10 @@ export class HttpRevocationStore extends RemoteBase implements RevocationStore {
 
 /** Tamper-evident audit retained centrally by the control plane. */
 export class HttpAuditStore extends RemoteBase implements AuditStore {
+  /** One round-trip per record; the control plane (single writer) seals it. */
+  async record(fields: AuditFields): Promise<AuditEntry> {
+    return (await this.post<{ entry: AuditEntry }>("/v1/audit", { fields })).entry;
+  }
   async append(entry: AuditEntry): Promise<void> {
     await this.post("/v1/audit", { entry });
   }

@@ -52,6 +52,31 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(trail[1]["decision"], "deny")
         self.assertTrue(verify(remote.all())["ok"])
 
+    def test_concurrent_writers_keep_chain_intact(self):
+        import threading
+
+        kp = new_key_pair()
+        engines = [create_behalf(root_key_pair=kp, audit=HttpAuditStore(self.base)) for _ in range(4)]
+        mandates = [
+            e.grant(principal="u", agent=f"a{i}", can=["read:calendar"], expires_in="1h")
+            for i, e in enumerate(engines)
+        ]
+
+        def hammer(m):
+            for _ in range(5):
+                m.authorize("read:calendar")
+
+        threads = [threading.Thread(target=hammer, args=(m,)) for m in mandates]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        all_entries = HttpAuditStore(self.base).all()
+        self.assertEqual(len(all_entries), 20)
+        self.assertEqual(sorted(e["seq"] for e in all_entries), list(range(20)))
+        self.assertTrue(verify(all_entries)["ok"])
+
     def test_consent_flow(self):
         client = ControlPlaneClient(self.base)
         created = client.request_consent("agent-1", "write:email", {"to": "x@y.z"})

@@ -1,4 +1,5 @@
-import type { AuditEntry } from "./types.js";
+import { seal } from "./audit.js";
+import type { AuditEntry, AuditFields } from "./types.js";
 
 /**
  * Pluggable persistence. Defaults are in-memory and local-first, so the library
@@ -11,6 +12,13 @@ export interface RevocationStore {
 }
 
 export interface AuditStore {
+  /**
+   * Seal `fields` onto the chain and persist — the primary write path used by
+   * the engine. The store owns sequencing/hashing so writes stay O(1) and, for
+   * a shared store, race-free under a single writer.
+   */
+  record(fields: AuditFields): Promise<AuditEntry> | AuditEntry;
+  /** Append an already-sealed entry verbatim (replication / import). */
   append(entry: AuditEntry): Promise<void> | void;
   /** Entries whose chain includes `mandateId`, in order. */
   forMandate(mandateId: string): Promise<AuditEntry[]> | AuditEntry[];
@@ -29,6 +37,11 @@ export class MemoryRevocationStore implements RevocationStore {
 
 export class MemoryAuditStore implements AuditStore {
   private entries: AuditEntry[] = [];
+  record(fields: AuditFields): AuditEntry {
+    const entry = seal(this.entries[this.entries.length - 1] ?? null, fields);
+    this.entries.push(entry);
+    return entry;
+  }
   append(entry: AuditEntry): void {
     this.entries.push(entry);
   }

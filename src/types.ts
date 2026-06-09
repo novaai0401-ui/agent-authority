@@ -65,6 +65,12 @@ export interface AttenuateOptions {
   agent?: string;
 }
 
+/** The decision fields of an audit record, before it is sealed into the chain. */
+export type AuditFields = Pick<
+  AuditEntry,
+  "mandateId" | "chain" | "action" | "decision" | "reason"
+>;
+
 /** A single tamper-evident audit record. */
 export interface AuditEntry {
   seq: number;

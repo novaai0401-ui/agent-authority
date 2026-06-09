@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { MemoryRevocationStore, MemoryAuditStore, type AuditStore, type RevocationStore } from "./store.js";
-import type { AuditEntry } from "./types.js";
+import type { AuditEntry, AuditFields } from "./types.js";
 
 /**
  * The Behalf control plane (Phase 2 / open-core hosted surface).
@@ -90,9 +90,18 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     // ---- Audit retention ----
     if (method === "POST" && path === "/v1/audit") {
       const body = await readJson(req);
-      if (!body?.entry) return send(res, 400, { error: "entry required" });
-      await audit.append(body.entry as AuditEntry);
-      return send(res, 200, { ok: true });
+      // Preferred path: the client sends raw fields and the control plane (the
+      // single writer) seals them onto the chain — race-free, O(1) per record.
+      if (body?.fields) {
+        const entry = await audit.record(body.fields as AuditFields);
+        return send(res, 200, { entry });
+      }
+      // Replication path: store an already-sealed entry verbatim.
+      if (body?.entry) {
+        await audit.append(body.entry as AuditEntry);
+        return send(res, 200, { entry: body.entry });
+      }
+      return send(res, 400, { error: "fields or entry required" });
     }
     if (method === "GET" && path === "/v1/audit") {
       return send(res, 200, { entries: await audit.all() });

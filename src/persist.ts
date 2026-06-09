@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { AuditEntry } from "./types.js";
+import { seal } from "./audit.js";
+import type { AuditEntry, AuditFields } from "./types.js";
 import type { AuditStore, RevocationStore } from "./store.js";
 
 /**
@@ -38,13 +39,28 @@ export class FileRevocationStore implements RevocationStore {
 
 /** Append-only audit log persisted as JSON Lines (one entry per line). */
 export class FileAuditStore implements AuditStore {
+  /** Last sealed entry, tracked in memory so writes stay O(1) (no full re-read). */
+  private last: AuditEntry | null = null;
+
   constructor(private readonly path: string) {
     ensureDir(path);
-    if (!existsSync(path)) writeFileSync(path, "", "utf8");
+    if (existsSync(path)) {
+      const entries = this.all();
+      this.last = entries[entries.length - 1] ?? null;
+    } else {
+      writeFileSync(path, "", "utf8");
+    }
+  }
+
+  record(fields: AuditFields): AuditEntry {
+    const entry = seal(this.last, fields);
+    this.append(entry);
+    return entry;
   }
 
   append(entry: AuditEntry): void {
     appendFileSync(this.path, JSON.stringify(entry) + "\n", "utf8");
+    this.last = entry;
   }
 
   all(): AuditEntry[] {

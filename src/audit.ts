@@ -1,8 +1,7 @@
 import { sha256Hex } from "./crypto.js";
-import type { AuditEntry, AuditIntegrity } from "./types.js";
-import type { AuditStore } from "./store.js";
+import type { AuditEntry, AuditFields, AuditIntegrity } from "./types.js";
 
-const GENESIS = "0".repeat(64);
+export const GENESIS = "0".repeat(64);
 
 /** Canonical body (everything that is hashed, excluding the hash itself). */
 function body(e: Omit<AuditEntry, "hash">): string {
@@ -19,19 +18,14 @@ function body(e: Omit<AuditEntry, "hash">): string {
 }
 
 /**
- * Append a tamper-evident record. Each entry's hash chains to the previous one,
- * so any edit, deletion, or reordering breaks every hash downstream — the log
- * is verifiable without trusting the storage layer.
+ * Seal a new entry onto the chain after `prev` (or `null` for the first entry).
+ * Pure and O(1): the caller supplies the previous entry, so there is no need to
+ * re-read the whole log per record. The store that owns the log is the single
+ * writer, which keeps the hash chain race-free.
  */
-export async function record(
-  store: AuditStore,
-  fields: Pick<AuditEntry, "mandateId" | "chain" | "action" | "decision" | "reason">,
-): Promise<AuditEntry> {
-  const existing = await store.all();
-  const prev = existing[existing.length - 1];
+export function seal(prev: AuditEntry | null, fields: AuditFields): AuditEntry {
   const seq = prev ? prev.seq + 1 : 0;
   const prevHash = prev ? prev.hash : GENESIS;
-
   const partial: Omit<AuditEntry, "hash"> = {
     seq,
     ts: Date.now(),
@@ -42,9 +36,7 @@ export async function record(
     reason: fields.reason,
     prevHash,
   };
-  const entry: AuditEntry = { ...partial, hash: sha256Hex(prevHash + body(partial)) };
-  await store.append(entry);
-  return entry;
+  return { ...partial, hash: sha256Hex(prevHash + body(partial)) };
 }
 
 /** Replay the hash chain to confirm nothing was tampered with. */

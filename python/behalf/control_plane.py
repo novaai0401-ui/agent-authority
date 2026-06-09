@@ -74,6 +74,9 @@ class ControlPlane:
         self.consents: dict = {}
         self.policies: dict = {}
         self._server: Optional[ThreadingHTTPServer] = None
+        # The HTTP server is threaded, so serialize audit writes to keep the
+        # hash chain race-free (the control plane is the single logical writer).
+        self._audit_lock = threading.Lock()
 
     def listen(self, port: int = 0) -> int:
         self._server = ThreadingHTTPServer(("127.0.0.1", port), self._make_handler())
@@ -166,10 +169,22 @@ class ControlPlane:
                     cp.revocations.revoke(str(body["id"]))
                     return self._send(200, {"ok": True})
                 if path == "/v1/audit":
-                    if not body.get("entry"):
-                        return self._send(400, {"error": "entry required"})
-                    cp.audit.append(body["entry"])
-                    return self._send(200, {"ok": True})
+                    fields = body.get("fields")
+                    if fields:
+                        with cp._audit_lock:
+                            entry = cp.audit.record(
+                                mandate_id=fields["mandateId"],
+                                chain=fields["chain"],
+                                action=fields["action"],
+                                decision=fields["decision"],
+                                reason=fields.get("reason"),
+                            )
+                        return self._send(200, {"entry": entry})
+                    if body.get("entry"):
+                        with cp._audit_lock:
+                            cp.audit.append(body["entry"])
+                        return self._send(200, {"entry": body["entry"]})
+                    return self._send(400, {"error": "fields or entry required"})
                 if path == "/v1/consent":
                     if not body.get("agent") or not body.get("capability"):
                         return self._send(400, {"error": "agent and capability required"})

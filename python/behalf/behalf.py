@@ -137,8 +137,7 @@ class Behalf:
         chain = _chain_ids(token)
 
         def deny(reason: str) -> None:
-            audit_mod.record(
-                self._audit,
+            self._audit.record(
                 mandate_id=chain[-1],
                 chain=chain,
                 action=action,
@@ -194,9 +193,7 @@ class Behalf:
             hits.append(now)
             self._rate_hits[key] = hits
 
-        audit_mod.record(
-            self._audit, mandate_id=chain[-1], chain=chain, action=action, decision="allow"
-        )
+        self._audit.record(mandate_id=chain[-1], chain=chain, action=action, decision="allow")
 
     def revoke(self, id: str) -> None:
         self._revocations.revoke(id)

@@ -14,7 +14,7 @@ import {
   windowMs,
   type Capability,
 } from "./capability.js";
-import { record, verify as verifyAudit } from "./audit.js";
+import { verify as verifyAudit } from "./audit.js";
 import {
   MemoryAuditStore,
   MemoryRevocationStore,
@@ -156,7 +156,7 @@ export class Behalf implements Engine {
   async authorize(token: MandateToken, action: string): Promise<void> {
     const chain = chainIds(token);
     const deny = async (reason: string): Promise<never> => {
-      await record(this.auditStore, {
+      await this.auditStore.record({
         mandateId: chain[chain.length - 1],
         chain,
         action,
@@ -213,7 +213,7 @@ export class Behalf implements Engine {
       this.rateHits.set(key, hits);
     }
 
-    await record(this.auditStore, {
+    await this.auditStore.record({
       mandateId: chain[chain.length - 1],
       chain,
       action,

@@ -39,12 +39,31 @@ class FileAuditStore:
     def __init__(self, path: str) -> None:
         self.path = path
         _ensure_dir(path)
-        if not os.path.exists(path):
+        if os.path.exists(path):
+            entries = self.all()
+            self._last = entries[-1] if entries else None
+        else:
             open(path, "w", encoding="utf-8").close()
+            self._last = None
+
+    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict:
+        from .audit import seal
+
+        entry = seal(
+            self._last,
+            mandate_id=mandate_id,
+            chain=chain,
+            action=action,
+            decision=decision,
+            reason=reason,
+        )
+        self.append(entry)
+        return entry
 
     def append(self, entry: dict) -> None:
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
+        self._last = entry
 
     def all(self) -> list[dict]:
         with open(self.path, encoding="utf-8") as f:

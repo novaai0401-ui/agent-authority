@@ -11,6 +11,7 @@ class RevocationStore(Protocol):
 
 
 class AuditStore(Protocol):
+    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict: ...
     def append(self, entry: dict) -> None: ...
     def for_mandate(self, mandate_id: str) -> list[dict]: ...
     def all(self) -> list[dict]: ...
@@ -30,6 +31,20 @@ class MemoryRevocationStore:
 class MemoryAuditStore:
     def __init__(self) -> None:
         self._entries: list[dict] = []
+
+    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict:
+        from .audit import seal
+
+        entry = seal(
+            self._entries[-1] if self._entries else None,
+            mandate_id=mandate_id,
+            chain=chain,
+            action=action,
+            decision=decision,
+            reason=reason,
+        )
+        self._entries.append(entry)
+        return entry
 
     def append(self, entry: dict) -> None:
         self._entries.append(entry)

@@ -64,6 +64,35 @@ test("audit is retained centrally and stays tamper-evident", async () => {
   });
 });
 
+test("concurrent writers keep the central audit chain race-free and intact", async () => {
+  await withControlPlane(async (base) => {
+    const keyPair = newKeyPair();
+    // Several agents authorize in parallel against one shared control plane.
+    const agents = Array.from({ length: 5 }, () =>
+      createBehalf({ rootKeyPair: keyPair, audit: new HttpAuditStore(base) }),
+    );
+    const mandates = agents.map((a, i) =>
+      a.grant({ principal: "u", agent: `a${i}`, can: ["read:calendar"], expiresIn: "1h" }),
+    );
+
+    // 5 agents x 6 authorizations, all interleaved.
+    await Promise.all(
+      mandates.flatMap((m) => Array.from({ length: 6 }, () => m.authorize("read:calendar"))),
+    );
+
+    const remote = new HttpAuditStore(base);
+    const all = await remote.all();
+    assert.equal(all.length, 30, "every record landed exactly once");
+    // Sequence numbers are a contiguous 0..29 with no gaps or dupes.
+    assert.deepEqual(
+      all.map((e) => e.seq).sort((x, y) => x - y),
+      Array.from({ length: 30 }, (_, i) => i),
+    );
+    const { verify } = await import("../src/audit.js");
+    assert.ok(verify(all).ok, "hash chain stays valid under concurrency");
+  });
+});
+
 test("consent flow: request stays pending until decided", async () => {
   await withControlPlane(async (base) => {
     const client = new ControlPlaneClient(base);
