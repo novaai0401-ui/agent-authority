@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 81 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 82 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -264,6 +264,9 @@ const behalf = createBehalf({
 });
 // revoke(id) propagates to every agent; audit is sealed centrally (race-free);
 // and a `rate<=N/h` cap is enforced ONCE across all agents, not per process.
+//
+// Multi-tenant: createControlPlane({ tenants: { tokenA: issuerAPubKey } }) — a
+// tenant token reads/writes only its own issuer's audit; `token` is admin.
 
 // Optional: cache revocation checks with a bounded staleness window.
 // import { CachingRevocationStore } from "behalf";
@@ -288,7 +291,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 53 tests, zero dependencies
+python3 -m unittest discover -s tests   # 54 tests, zero dependencies
 ```
 
 ```python
@@ -334,12 +337,11 @@ rate limiting, and the consent provider.
 
 Honest about what this reference implementation does *not* yet do:
 
-- **Tenant separation is by issuer key, not authenticated identity.** Audit
-  entries are tagged with their issuer (root public key); query a single tenant
-  with `forIssuer(pub)` and run the plane with `tenantScoped: true` to refuse the
-  unscoped "all" list. There is still one shared bearer token, not per-tenant
-  credentials — a caller could query any issuer's audit if it knows the key.
-  Roadmap: per-tenant auth tokens bound to an issuer.
+- **Revocation, rate, and consent are shared across tenants.** Per-tenant tokens
+  (`tenants: { token: issuerPub }`) isolate *audit* (a token reads/writes only
+  its own issuer) and give each tenant a private *policy* namespace, but
+  revocation ids, rate keys, and consent records live in one shared space. That's
+  fine for a single trust domain; for hard multi-tenancy, run a plane per tenant.
 - **Shared rate checks hit the network each call.** `HttpRateStore` must consult
   the control plane on every `authorize()` (the cap is authoritative and can't be
   cached). Revocation, by contrast, can be wrapped in `CachingRevocationStore` for

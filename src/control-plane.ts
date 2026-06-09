@@ -47,7 +47,15 @@ export interface ControlPlaneOptions {
    * tenant from reading another's audit through a shared control plane.
    */
   tenantScoped?: boolean;
-  /** If set, require `Authorization: Bearer <token>` on every request. */
+  /**
+   * Per-tenant bearer tokens: a map of `token -> issuer public key`. A tenant
+   * token may only read/write audit for its own issuer (any `?issuer=` is
+   * ignored, cross-issuer writes are refused) and gets a private policy
+   * namespace. Combine with `token` (an admin credential with full, unscoped
+   * access). When either is set, every request must authenticate.
+   */
+  tenants?: Record<string, string>;
+  /** Admin credential — full, unscoped access. */
   token?: string;
 }
 
@@ -72,9 +80,20 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
   };
 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (options.token) {
+    // Resolve the caller. `token` is an admin credential (full, unscoped);
+    // `tenants` maps a bearer token to the issuer it is allowed to act for.
+    let isAdmin = false;
+    let callerIssuer: string | undefined;
+    if (options.token || options.tenants) {
       const auth = req.headers["authorization"];
-      if (auth !== `Bearer ${options.token}`) return send(res, 401, { error: "unauthorized" });
+      const bearer = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (options.token && bearer === options.token) {
+        isAdmin = true;
+      } else if (options.tenants && Object.prototype.hasOwnProperty.call(options.tenants, bearer) && bearer) {
+        callerIssuer = options.tenants[bearer];
+      } else {
+        return send(res, 401, { error: "unauthorized" });
+      }
     }
 
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -110,17 +129,26 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
       // Preferred path: the client sends raw fields and the control plane (the
       // single writer) seals them onto the chain — race-free, O(1) per record.
       if (body?.fields) {
-        const entry = await audit.record(body.fields as AuditFields);
+        const fields = body.fields as AuditFields;
+        if (callerIssuer && fields.issuer !== callerIssuer) {
+          return send(res, 403, { error: "issuer does not match tenant token" });
+        }
+        const entry = await audit.record(fields);
         return send(res, 200, { entry });
       }
       // Replication path: store an already-sealed entry verbatim.
       if (body?.entry) {
+        if (callerIssuer && (body.entry as AuditEntry).issuer !== callerIssuer) {
+          return send(res, 403, { error: "issuer does not match tenant token" });
+        }
         await audit.append(body.entry as AuditEntry);
         return send(res, 200, { entry: body.entry });
       }
       return send(res, 400, { error: "fields or entry required" });
     }
     if (method === "GET" && path === "/v1/audit") {
+      // A tenant token is locked to its own issuer, ignoring any ?issuer.
+      if (callerIssuer) return send(res, 200, { entries: await audit.forIssuer(callerIssuer) });
       const issuer = url.searchParams.get("issuer");
       if (issuer) return send(res, 200, { entries: await audit.forIssuer(issuer) });
       if (options.tenantScoped) {
@@ -131,7 +159,9 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     const auditMatch = method === "GET" && /^\/v1\/audit\/(.+)$/.exec(path);
     if (auditMatch) {
       const id = decodeURIComponent(auditMatch[1]);
-      return send(res, 200, { entries: await audit.forMandate(id) });
+      let entries = await audit.forMandate(id);
+      if (callerIssuer) entries = entries.filter((e) => e.issuer === callerIssuer);
+      return send(res, 200, { entries });
     }
 
     // ---- Shared rate limiting ----
@@ -188,15 +218,17 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     const policyMatch = /^\/v1\/policy\/([^/]+)$/.exec(path);
     if (policyMatch) {
       const name = policyMatch[1];
+      // Tenants get a private namespace so policy names can't clash or leak.
+      const key = callerIssuer ? `${callerIssuer} ${name}` : name;
       if (method === "GET") {
-        return (await policies.has(name))
-          ? send(res, 200, { name, policy: await policies.get(name) })
+        return (await policies.has(key))
+          ? send(res, 200, { name, policy: await policies.get(key) })
           : send(res, 404, { error: "not found" });
       }
       if (method === "PUT") {
         const body = await readJson(req);
-        await policies.set(name, body?.policy ?? body);
-        return send(res, 200, { name, policy: await policies.get(name) });
+        await policies.set(key, body?.policy ?? body);
+        return send(res, 200, { name, policy: await policies.get(key) });
       }
     }
 
