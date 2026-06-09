@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://behalf.dev/schemas/capability.schema.json",
+  "title": "Behalf Capability",
+  "description": "A capability string in the Behalf grammar: <verb>:<resource>[<op><amount>] [rate<op><value>/<unit>]. Examples: read:calendar, write:repo/acme-app, spend:usd<=50, send:email rate<=10/h, * (wildcard, discouraged).",
+  "type": "string",
+  "pattern": "^(\\*|[^:\\s]+:[^<>=\\s]+((<=|>=|<|>|=)[0-9]*\\.?[0-9]+)?(\\s+rate(<=|>=|<|>|=)[0-9]*\\.?[0-9]+(/[smhd])?)*)$",
+  "examples": [
+    "read:calendar",
+    "write:repo/acme-app",
+    "spend:usd<=50",
+    "send:email rate<=10/h"
+  ]
+}

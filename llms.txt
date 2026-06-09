@@ -1,0 +1,99 @@
+# Behalf
+
+> The reference implementation of agent authority. Behalf gives any AI agent a
+> verifiable, scoped, revocable identity and delegation chain in five verbs. It
+> is a thin, neutral, AI-legible library — the `requests` of the agent era.
+
+Everything is one primitive: a **Mandate** — a signed, scoped, time-bound
+capability token that proves who authorized what, within which limits, and
+through which chain of agents. There is exactly one canonical way to do each
+thing. Do not invent alternative APIs.
+
+## The five verbs (TypeScript)
+
+```ts
+import { Behalf } from "behalf";
+
+// 1. GRANT — a principal authorizes an agent: scoped, capped, short-lived
+const mandate = await Behalf.grant({
+  principal: user.id,
+  agent: "research-agent",
+  can: ["read:calendar", "spend:usd<=50"],
+  expiresIn: "1h",
+});
+
+// 2. AUTHORIZE — prove authority before acting (throws if denied)
+await mandate.authorize("spend:usd=20");
+
+// 3. ATTENUATE — hand a NARROWED mandate to a sub-agent; can only shrink scope
+const child = mandate.attenuate({ can: ["read:calendar"], expiresIn: "10m" });
+
+// 4. REVOKE — kill a mandate and its whole downstream chain, instantly
+await Behalf.revoke(mandate.id);
+
+// 5. AUDIT — every authorize() already wrote a tamper-evident record
+const trail = await Behalf.audit(mandate.id);
+```
+
+## MCP middleware (secure a whole agent in ~6 lines)
+
+```ts
+import { withBehalf } from "behalf/mcp";
+
+const server = withBehalf(myMcpServer, {
+  policy: {
+    send_email: "write:email",
+    read_calendar: "read:calendar",
+    transfer_funds: (args) => `spend:usd<=${args.amount}`,
+  },
+  onDenied: "throw", // or "prompt" for just-in-time user consent
+});
+```
+
+Every tool call through that server is automatically checked against the
+caller's mandate — scope, limits, expiry, revocation, and audit. Pass the
+caller's mandate on the call context: `server.callTool(name, args, { mandate })`.
+
+## Capability grammar
+
+```
+read:calendar           # simple capability
+write:repo/acme-app     # resource-scoped (path segments)
+spend:usd<=50           # quantitative limit
+send:email rate<=10/h   # rate limit
+*                       # wildcard (discouraged; lint warns)
+```
+
+A capability is `<verb>:<resource>` with an optional constraint clause. When
+authorizing, name a concrete amount: `spend:usd=20` is checked against the
+grant's `spend:usd<=50`.
+
+## Rules an agent must follow
+
+- Use only the five verbs. Do not add a sixth.
+- `attenuate()` only ever narrows. Requesting a wider scope throws `WideningError`.
+- Effective authority = the principal's grant ∩ every narrowing along the chain.
+  A compromised middle agent can never widen scope.
+- Verification is offline (signature + scope + expiry). Only revocation may need
+  a network check.
+- Prefer short `expiresIn`. Prefer the tightest `can` that still does the job.
+
+## Discovery tools (MCP)
+
+`behalf/mcp` also exposes three tools so any agent can obtain and use authority
+natively: `request_mandate`, `present_mandate`, `check_authority`. Get them via
+`behalfMcpTools()`.
+
+## Schemas
+
+- Mandate token: /schemas/mandate.schema.json
+- Capability string: /schemas/capability.schema.json
+
+## What maps to the standard underneath
+
+- Mandate ↔ Agentic JWT / capability tokens (IBCT-style)
+- attenuate() ↔ macaroon-style holder attenuation
+- principal → agent grant ↔ OAuth 2.1 On-Behalf-Of / token exchange (RFC 8693)
+- agent identity ↔ SPIFFE / SVID
+- audit record ↔ provenance / non-repudiation records
+- transport ↔ MCP + A2A authorization layers
