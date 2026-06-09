@@ -4,6 +4,19 @@
   "description": "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs.",
   "type": "module",
   "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/novaai0401-ui/agent-authority.git"
+  },
+  "homepage": "https://github.com/novaai0401-ui/agent-authority#readme",
+  "bugs": {
+    "url": "https://github.com/novaai0401-ui/agent-authority/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "keywords": [
     "agent",
     "authority",
@@ -18,11 +31,14 @@
   "files": [
     "dist",
     "schemas",
-    "llms.txt"
+    "llms.txt",
+    "QUICKSTART.md",
+    "CHANGELOG.md"
   ],
   "bin": {
     "behalf": "./dist/cli.js",
-    "behalf-mcp": "./dist/mcp-server.js"
+    "behalf-mcp": "./dist/mcp-server.js",
+    "behalf-control-plane": "./dist/control-plane.js"
   },
   "exports": {
     ".": {
@@ -41,17 +57,27 @@
       "types": "./dist/mcp-server.d.ts",
       "import": "./dist/mcp-server.js"
     },
+    "./control-plane": {
+      "types": "./dist/control-plane.d.ts",
+      "import": "./dist/control-plane.js"
+    },
+    "./remote": {
+      "types": "./dist/remote.d.ts",
+      "import": "./dist/remote.js"
+    },
     "./llms.txt": "./llms.txt"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "test": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
     "test:interop": "npm run build && node scripts/interop.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm test",
     "example:data-access": "node dist-test/examples/data-access-agent.js",
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
     "example:delegation": "node dist-test/examples/two-agent-delegation.js",
-    "example:a2a": "node dist-test/examples/a2a-delegation.js"
+    "example:a2a": "node dist-test/examples/a2a-delegation.js",
+    "example:control-plane": "node dist-test/examples/control-plane.js"
   },
   "engines": {
     "node": ">=18"

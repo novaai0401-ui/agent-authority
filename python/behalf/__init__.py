@@ -29,10 +29,31 @@ from .errors import (
     WideningError,
 )
 from .mandate import Mandate
+from .persist import (
+    FileAuditStore,
+    FileConsentStore,
+    FilePolicyStore,
+    FileRevocationStore,
+)
+from .control_plane import ControlPlane, create_control_plane
+from .remote import (
+    ControlPlaneClient,
+    HttpAuditStore,
+    HttpRateStore,
+    HttpRevocationStore,
+    control_plane_consent,
+)
 from .store import (
     AuditStore,
+    CachingRevocationStore,
+    ConsentStore,
     MemoryAuditStore,
+    MemoryConsentStore,
+    MemoryPolicyStore,
+    MemoryRateStore,
     MemoryRevocationStore,
+    PolicyStore,
+    RateStore,
     RevocationStore,
 )
 
@@ -57,6 +78,24 @@ __all__ = [
     "CapabilityParseError",
     "MemoryRevocationStore",
     "MemoryAuditStore",
+    "MemoryRateStore",
     "RevocationStore",
     "AuditStore",
+    "RateStore",
+    "FileRevocationStore",
+    "FileAuditStore",
+    "FileConsentStore",
+    "FilePolicyStore",
+    "MemoryConsentStore",
+    "MemoryPolicyStore",
+    "CachingRevocationStore",
+    "ConsentStore",
+    "PolicyStore",
+    "ControlPlane",
+    "create_control_plane",
+    "HttpRevocationStore",
+    "HttpAuditStore",
+    "HttpRateStore",
+    "ControlPlaneClient",
+    "control_plane_consent",
 ]

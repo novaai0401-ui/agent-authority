@@ -65,11 +65,19 @@ export interface AttenuateOptions {
   agent?: string;
 }
 
+/** The decision fields of an audit record, before it is sealed into the chain. */
+export type AuditFields = Pick<
+  AuditEntry,
+  "mandateId" | "chain" | "action" | "decision" | "reason" | "issuer"
+>;
+
 /** A single tamper-evident audit record. */
 export interface AuditEntry {
   seq: number;
   ts: number;
   mandateId: string;
+  /** Issuer (root) public key of the mandate, for per-tenant scoping. */
+  issuer?: string;
   /** Full chain of ids this token belongs to (root → leaf). */
   chain: string[];
   action: string;
@@ -86,4 +94,15 @@ export interface AuditIntegrity {
   ok: boolean;
   /** seq of the first broken entry, if any. */
   brokenAt?: number;
+}
+
+/** A just-in-time consent request tracked by the control plane. */
+export interface ConsentRecord {
+  id: string;
+  agent: string;
+  capability: string;
+  context?: Record<string, unknown>;
+  status: "pending" | "approved" | "denied";
+  createdAt: number;
+  decidedAt?: number;
 }

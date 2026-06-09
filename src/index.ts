@@ -42,12 +42,50 @@ export {
 export {
   MemoryRevocationStore,
   MemoryAuditStore,
+  MemoryRateStore,
+  MemoryConsentStore,
+  MemoryPolicyStore,
+  CachingRevocationStore,
   type RevocationStore,
   type AuditStore,
+  type RateStore,
+  type ConsentStore,
+  type PolicyStore,
+  type CacheOptions,
 } from "./store.js";
-export { FileRevocationStore, FileAuditStore } from "./persist.js";
+export {
+  FileRevocationStore,
+  FileAuditStore,
+  FileConsentStore,
+  FilePolicyStore,
+} from "./persist.js";
+export {
+  createControlPlane,
+  type ControlPlane,
+  type ControlPlaneOptions,
+  type ConsentRecord,
+} from "./control-plane.js";
+export {
+  HttpRevocationStore,
+  HttpAuditStore,
+  HttpRateStore,
+  ControlPlaneClient,
+  controlPlaneConsent,
+  type RemoteOptions,
+  type ConsentProviderOptions,
+  type ConsentRequest,
+} from "./remote.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
+export {
+  generateQuickstart,
+  findSurface,
+  listSurfaces,
+  DEFAULT_SURFACES,
+  type Surface,
+  type QuickstartOptions,
+  type Quickstart,
+} from "./quickstart.js";
 export {
   present,
   behalfFetch,

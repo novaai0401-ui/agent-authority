@@ -142,16 +142,17 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 58 tests: capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint
+npm test             # 81 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
 
 ```bash
-npm run example:data-access   # a read-only data agent
-npm run example:spend         # a budget- and rate-limited spend agent
-npm run example:delegation    # two-agent attenuation + cascade revoke
-npm run example:a2a           # agent-to-agent delegation over HTTP
+npm run example:data-access     # a read-only data agent
+npm run example:spend           # a budget- and rate-limited spend agent
+npm run example:delegation      # two-agent attenuation + cascade revoke
+npm run example:a2a             # agent-to-agent delegation over HTTP
+npm run example:control-plane   # revocation propagation across agents
 ```
 
 ### CLI
@@ -181,6 +182,20 @@ node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
 ```jsonc
 // register with an MCP client, e.g.:
 { "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
+```
+
+### Quickstarts for any AI
+
+`behalf quickstart` generates the wiring for any surface — Claude Code, Cursor,
+Copilot, Windsurf, Gemini CLI, OpenAI Agents (MCP), and GPT / Gemini APIs
+(function tools). Any other AI is configurable via a custom surface file or the
+generic MCP template. See [QUICKSTART.md](./QUICKSTART.md).
+
+```bash
+behalf quickstart --list
+behalf quickstart claude-code
+behalf quickstart gpt           # OpenAI function tools
+behalf quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
 ```
 
 ### A2A — agent-to-agent over HTTP
@@ -226,6 +241,35 @@ const behalf = createBehalf({
 });
 ```
 
+### Control plane (revocation propagation + audit retention)
+
+For multi-agent deployments, the control plane centralizes revocation (revoke
+once, every agent sees it), retains one tamper-evident audit log, and offers a
+consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
+same stores — point agents at it with the `behalf/remote` client stores and the
+five-verb API is unchanged.
+
+```bash
+node dist/control-plane.js     # bin: behalf-control-plane; dashboard at /
+```
+
+```ts
+import { createBehalf } from "behalf";
+import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "behalf/remote";
+
+const behalf = createBehalf({
+  revocations: new HttpRevocationStore("http://localhost:8787"),
+  audit: new HttpAuditStore("http://localhost:8787"),
+  rate: new HttpRateStore("http://localhost:8787"),
+});
+// revoke(id) propagates to every agent; audit is sealed centrally (race-free);
+// and a `rate<=N/h` cap is enforced ONCE across all agents, not per process.
+
+// Optional: cache revocation checks with a bounded staleness window.
+// import { CachingRevocationStore } from "behalf";
+// revocations: new CachingRevocationStore(new HttpRevocationStore(url), { ttlMs: 5000 })
+```
+
 ### Cross-language interop
 
 A mandate issued by either reference port verifies in the other: both encode keys
@@ -244,7 +288,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 38 tests, zero dependencies
+python3 -m unittest discover -s tests   # 53 tests, zero dependencies
 ```
 
 ```python
@@ -273,12 +317,45 @@ Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
 persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
-between agents, **capability linting**, and **cross-language wire interop**
-(TS⇄Python mandates verify in either port). CI runs both test suites plus the
-interop check on Node 20/22 and Python 3.9/3.12.
+between agents, **capability linting**, **cross-language wire interop**
+(TS⇄Python mandates verify in either port), and a **control plane** for
+revocation propagation, audit retention, and consent/policy with a dashboard, and
+**dynamic per-surface quickstarts** that wire Behalf into any AI (Claude Code,
+Cursor, Copilot, Gemini, GPT, or a custom surface). CI runs both test suites plus
+the interop check on Node 20/22 and Python 3.9/3.12.
 
-Deferred: deep multi-hop tuning and the Phase-2 hosted control plane (managed
-revocation propagation, audit retention, and a consent/policy dashboard).
+All control-plane state can be file-backed for durability — revocation, audit,
+and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
+`behalf-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
+port has full parity: control-plane server + client, file persistence, shared
+rate limiting, and the consent provider.
+
+## Limitations & roadmap
+
+Honest about what this reference implementation does *not* yet do:
+
+- **Tenant separation is by issuer key, not authenticated identity.** Audit
+  entries are tagged with their issuer (root public key); query a single tenant
+  with `forIssuer(pub)` and run the plane with `tenantScoped: true` to refuse the
+  unscoped "all" list. There is still one shared bearer token, not per-tenant
+  credentials — a caller could query any issuer's audit if it knows the key.
+  Roadmap: per-tenant auth tokens bound to an issuer.
+- **Shared rate checks hit the network each call.** `HttpRateStore` must consult
+  the control plane on every `authorize()` (the cap is authoritative and can't be
+  cached). Revocation, by contrast, can be wrapped in `CachingRevocationStore` for
+  a bounded staleness window — a revoked answer is cached forever, a not-revoked
+  answer for `ttlMs`. Signature, scope, and expiry are always fully offline.
+- **Cross-language delegation is verify-only.** A mandate issued in one port
+  verifies/authorizes in the other, but attenuation needs the in-memory
+  delegation key, so delegate within the issuing port.
+- **Pure-Python Ed25519 is not constant-time.** The zero-dependency reference
+  signer is correct but not hardened against timing side-channels; use libsodium
+  for production Python deployments. (Node uses its native, hardened crypto.)
+- **Rate windows are sliding-count, not token-bucket**, and rejected attempts
+  are not counted — adequate for caps, not for burst shaping.
+
+None of these affect the core security properties (unforgeable, attenuation-only,
+offline-verifiable mandates); they are durability/scaling/hardening trade-offs.
 
 ## License
 

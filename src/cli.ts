@@ -13,6 +13,12 @@ import {
 import { FileRevocationStore, FileAuditStore } from "./persist.js";
 import { AuthorizationError } from "./errors.js";
 import { lint } from "./lint.js";
+import {
+  generateQuickstart,
+  findSurface,
+  listSurfaces,
+  type Surface,
+} from "./quickstart.js";
 
 /**
  * `behalf` CLI — grant, inspect, authorize, revoke, and audit mandates from the
@@ -84,8 +90,71 @@ Usage:
   behalf revoke <mandate-id>
   behalf audit <mandate-id>
   behalf lint <cap> [<cap> ...]
+  behalf quickstart <surface>   (e.g. claude-code, cursor, copilot, gpt, gemini)
+  behalf quickstart --list      (list every surface; any AI is configurable)
 
 State dir: ${HOME}  (override with $BEHALF_HOME)`;
+
+/** Commands that need no key store or engine: lint, quickstart. */
+function runStateless(cmd: string, args: { _: string[]; [k: string]: string | string[] }): number {
+  if (cmd === "lint") {
+    const caps = args._;
+    if (caps.length === 0) {
+      console.error("lint requires at least one capability");
+      return 2;
+    }
+    const findings = lint(caps);
+    for (const f of findings) {
+      console.log(`${f.level.toUpperCase().padEnd(5)} ${f.capability}  ${f.message}`);
+    }
+    const hasProblem = findings.some((f) => f.level !== "info");
+    console.log(`\n${findings.length} finding(s)`);
+    return hasProblem ? 1 : 0;
+  }
+
+  // quickstart
+  const extra = loadCustomSurfaces(args.surfaces as string | undefined);
+  if (args.list !== undefined || args._[0] === "list") {
+    for (const s of listSurfaces(extra)) console.log(`${s.id.padEnd(16)} ${s.name}`);
+    return 0;
+  }
+  const id = args._[0];
+  if (!id) {
+    console.error("quickstart requires a surface id, or --list. e.g. behalf quickstart claude-code");
+    return 2;
+  }
+  const surface = findSurface(id, extra);
+  if (!surface) {
+    console.error(`unknown surface "${id}". Run: behalf quickstart --list`);
+    return 2;
+  }
+  const command = args.local !== undefined ? "node" : (args.command as string) ?? undefined;
+  const cliArgs = args.local !== undefined ? ["dist/mcp-server.js"] : asArray(args.arg);
+  const env: Record<string, string> = {};
+  for (const e of asArray(args.env)) {
+    const i = e.indexOf("=");
+    if (i > 0) env[e.slice(0, i)] = e.slice(i + 1);
+  }
+  const qs = generateQuickstart(surface, {
+    name: (args.name as string) ?? undefined,
+    command,
+    args: cliArgs.length ? cliArgs : undefined,
+    env: Object.keys(env).length ? env : undefined,
+  });
+  console.log(args.format === "json" ? JSON.stringify(qs, null, 2) : qs.text);
+  return 0;
+}
+
+function loadCustomSurfaces(file: string | undefined): Surface[] {
+  if (!file) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return Array.isArray(parsed) ? (parsed as Surface[]) : [parsed as Surface];
+  } catch (e) {
+    console.error(`could not read surfaces file "${file}": ${(e as Error).message}`);
+    return [];
+  }
+}
 
 async function main(): Promise<number> {
   const [cmd, ...rest] = process.argv.slice(2);
@@ -94,6 +163,12 @@ async function main(): Promise<number> {
     return 0;
   }
   const args = parseArgs(rest);
+
+  // Commands that don't touch mandate state shouldn't create the key store.
+  if (cmd === "lint" || cmd === "quickstart") {
+    return runStateless(cmd, args);
+  }
+
   const engine = loadEngine();
 
   switch (cmd) {
@@ -117,20 +192,6 @@ async function main(): Promise<number> {
       const m = engine.grant({ principal, agent, can, expiresIn });
       console.log(m.serialize());
       return 0;
-    }
-    case "lint": {
-      const caps = args._;
-      if (caps.length === 0) {
-        console.error("lint requires at least one capability");
-        return 2;
-      }
-      const findings = lint(caps);
-      for (const f of findings) {
-        console.log(`${f.level.toUpperCase().padEnd(5)} ${f.capability}  ${f.message}`);
-      }
-      const hasProblem = findings.some((f) => f.level !== "info");
-      console.log(`\n${findings.length} finding(s)`);
-      return hasProblem ? 1 : 0;
     }
     case "inspect": {
       const m = engine.import(args._[0]);

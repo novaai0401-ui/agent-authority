@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Optional
 
 from .crypto import sha256_hex
-from .store import AuditStore
 
-_GENESIS = "0" * 64
+GENESIS = "0" * 64
+_GENESIS = GENESIS
 
 
 def _body(e: dict) -> str:
@@ -17,6 +18,7 @@ def _body(e: dict) -> str:
             "seq": e["seq"],
             "ts": e["ts"],
             "mandateId": e["mandateId"],
+            "issuer": e.get("issuer") or "",
             "chain": e["chain"],
             "action": e["action"],
             "decision": e["decision"],
@@ -27,24 +29,27 @@ def _body(e: dict) -> str:
     )
 
 
-def record(
-    store: AuditStore,
+def seal(
+    prev: Optional[dict],
     *,
     mandate_id: str,
     chain: list[str],
     action: str,
     decision: str,
-    reason: str | None = None,
+    reason: Optional[str] = None,
+    issuer: Optional[str] = None,
 ) -> dict:
-    existing = store.all()
-    prev = existing[-1] if existing else None
+    """Seal a new entry onto the chain after ``prev`` (or None for the first).
+
+    Pure and O(1): the caller supplies the previous entry, so the whole log is
+    never re-read per record, and the owning store is the single writer."""
     seq = prev["seq"] + 1 if prev else 0
     prev_hash = prev["hash"] if prev else _GENESIS
-
     entry = {
         "seq": seq,
         "ts": int(time.time() * 1000),
         "mandateId": mandate_id,
+        "issuer": issuer,
         "chain": chain,
         "action": action,
         "decision": decision,
@@ -52,7 +57,6 @@ def record(
         "prevHash": prev_hash,
     }
     entry["hash"] = sha256_hex(prev_hash + _body(entry))
-    store.append(entry)
     return entry
 
 

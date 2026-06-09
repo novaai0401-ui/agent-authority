@@ -12,5 +12,10 @@ license = { text = "MIT" }
 keywords = ["agent", "authority", "delegation", "capability", "mandate", "mcp", "a2a", "authorization", "ai"]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/novaai0401-ui/agent-authority"
+Repository = "https://github.com/novaai0401-ui/agent-authority"
+Issues = "https://github.com/novaai0401-ui/agent-authority/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["behalf"]
