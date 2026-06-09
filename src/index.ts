@@ -59,7 +59,10 @@ export {
   HttpAuditStore,
   HttpRateStore,
   ControlPlaneClient,
+  controlPlaneConsent,
   type RemoteOptions,
+  type ConsentProviderOptions,
+  type ConsentRequest,
 } from "./remote.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";

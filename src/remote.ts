@@ -117,3 +117,51 @@ export class ControlPlaneClient extends RemoteBase {
     return (await res.json()) as { name: string; policy: T };
   }
 }
+
+export interface ConsentProviderOptions {
+  /** How often to poll for a decision. Default 500ms. */
+  pollMs?: number;
+  /** Give up (deny) after this long. Default 30s. */
+  timeoutMs?: number;
+  /** Called with the pending record's id — surface it to a dashboard/approver. */
+  onPending?: (record: { id: string }) => void;
+  /** Injectable sleep — handy for tests. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Info the middleware passes to a just-in-time consent decision. */
+export interface ConsentRequest {
+  tool?: string;
+  capability: string;
+  mandate?: { agent?: string };
+}
+
+/**
+ * A consent provider backed by the control plane. Use it as `withBehalf`'s
+ * `onPrompt`: on a denied call it opens a pending consent request, then polls
+ * until a human approves/denies it (via the dashboard or `decideConsent`),
+ * wiring the control plane's consent surface to enforcement end-to-end.
+ */
+export function controlPlaneConsent(
+  client: ControlPlaneClient,
+  opts: ConsentProviderOptions = {},
+): (info: ConsentRequest) => Promise<boolean> {
+  const pollMs = opts.pollMs ?? 500;
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+
+  return async (info: ConsentRequest): Promise<boolean> => {
+    const agent = info.mandate?.agent ?? info.tool ?? "agent";
+    const rec = await client.requestConsent(agent, info.capability, { tool: info.tool });
+    opts.onPending?.(rec);
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const cur = await client.getConsent(rec.id);
+      if (cur.status === "approved") return true;
+      if (cur.status === "denied") return false;
+      await sleep(pollMs);
+    }
+    return false; // timed out → deny
+  };
+}

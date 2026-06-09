@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 73 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 74 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -284,7 +284,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 46 tests, zero dependencies
+python3 -m unittest discover -s tests   # 47 tests, zero dependencies
 ```
 
 ```python

@@ -1,9 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createControlPlane } from "../src/control-plane.js";
-import { HttpRevocationStore, HttpAuditStore, HttpRateStore, ControlPlaneClient } from "../src/remote.js";
+import {
+  HttpRevocationStore,
+  HttpAuditStore,
+  HttpRateStore,
+  ControlPlaneClient,
+  controlPlaneConsent,
+} from "../src/remote.js";
 import { createBehalf } from "../src/behalf.js";
 import { newKeyPair } from "../src/crypto.js";
+import { withBehalf, type ToolServerLike } from "../src/mcp.js";
 import { AuthorizationError } from "../src/errors.js";
 
 async function withControlPlane(
@@ -125,6 +132,49 @@ test("consent flow: request stays pending until decided", async () => {
 
     const fetched = await client.getConsent(id);
     assert.equal(fetched.status, "approved");
+  });
+});
+
+test("control-plane consent wires just-in-time approval into the middleware", async () => {
+  await withControlPlane(async (base) => {
+    const engine = createBehalf();
+    // A mandate WITHOUT write:email — the send_email tool requires it.
+    const mandate = engine.grant({ principal: "u", agent: "mailer", can: ["read:calendar"], expiresIn: "1h" });
+
+    const calls: string[] = [];
+    const server: ToolServerLike = {
+      async callTool(name) {
+        calls.push(name);
+        return { ok: true };
+      },
+    };
+
+    const approver = new ControlPlaneClient(base);
+    const guarded = withBehalf(server, {
+      policy: { send_email: "write:email" },
+      onDenied: "prompt",
+      // Approve as soon as the pending request appears (a human/dashboard would).
+      onPrompt: controlPlaneConsent(approver, {
+        pollMs: 5,
+        onPending: (rec) => void approver.decideConsent(rec.id, true),
+      }),
+    });
+
+    // Denied by scope, but consent is granted out-of-band → the call proceeds.
+    await guarded.callTool("send_email", {}, { mandate });
+    assert.deepEqual(calls, ["send_email"]);
+
+    // And when consent is declined, the call is rejected.
+    const denying = withBehalf(server, {
+      policy: { send_email: "write:email" },
+      onDenied: "prompt",
+      onPrompt: controlPlaneConsent(approver, {
+        pollMs: 5,
+        onPending: (rec) => void approver.decideConsent(rec.id, false),
+      }),
+    });
+    await assert.rejects(() => denying.callTool("send_email", {}, { mandate }), AuthorizationError);
+    assert.deepEqual(calls, ["send_email"]); // not called again
   });
 });
 

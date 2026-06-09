@@ -11,11 +11,13 @@ from behalf.audit import verify  # noqa: E402
 from behalf.control_plane import create_control_plane  # noqa: E402
 from behalf.crypto import new_key_pair  # noqa: E402
 from behalf.errors import AuthorizationError  # noqa: E402
+from behalf.mcp import with_behalf  # noqa: E402
 from behalf.remote import (  # noqa: E402
     ControlPlaneClient,
     HttpAuditStore,
     HttpRateStore,
     HttpRevocationStore,
+    control_plane_consent,
 )
 
 
@@ -104,6 +106,40 @@ class ControlPlaneTests(unittest.TestCase):
         decided = client.decide_consent(created["id"], True)
         self.assertEqual(decided["status"], "approved")
         self.assertEqual(client.get_consent(created["id"])["status"], "approved")
+
+    def test_consent_wires_into_middleware(self):
+        engine = create_behalf()
+        mandate = engine.grant(principal="u", agent="mailer", can=["read:calendar"], expires_in="1h")
+
+        calls = []
+
+        class Server:
+            def call_tool(self, name, args, ctx=None):
+                calls.append(name)
+                return {"ok": True}
+
+        approver = ControlPlaneClient(self.base)
+        guarded = with_behalf(
+            Server(),
+            policy={"send_email": "write:email"},
+            on_denied="prompt",
+            on_prompt=control_plane_consent(
+                approver, poll_ms=5, on_pending=lambda rec: approver.decide_consent(rec["id"], True)
+            ),
+        )
+        guarded.call_tool("send_email", {}, {"mandate": mandate})
+        self.assertEqual(calls, ["send_email"])
+
+        denying = with_behalf(
+            Server(),
+            policy={"send_email": "write:email"},
+            on_denied="prompt",
+            on_prompt=control_plane_consent(
+                approver, poll_ms=5, on_pending=lambda rec: approver.decide_consent(rec["id"], False)
+            ),
+        )
+        with self.assertRaises(AuthorizationError):
+            denying.call_tool("send_email", {}, {"mandate": mandate})
 
     def test_policy_store(self):
         client = ControlPlaneClient(self.base)

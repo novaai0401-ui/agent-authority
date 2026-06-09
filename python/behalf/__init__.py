@@ -31,7 +31,13 @@ from .errors import (
 from .mandate import Mandate
 from .persist import FileAuditStore, FileRevocationStore
 from .control_plane import ControlPlane, create_control_plane
-from .remote import ControlPlaneClient, HttpAuditStore, HttpRateStore, HttpRevocationStore
+from .remote import (
+    ControlPlaneClient,
+    HttpAuditStore,
+    HttpRateStore,
+    HttpRevocationStore,
+    control_plane_consent,
+)
 from .store import (
     AuditStore,
     MemoryAuditStore,
@@ -74,4 +80,5 @@ __all__ = [
     "HttpAuditStore",
     "HttpRateStore",
     "ControlPlaneClient",
+    "control_plane_consent",
 ]

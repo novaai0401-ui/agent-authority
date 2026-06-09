@@ -103,3 +103,39 @@ class ControlPlaneClient(_Base):
 
     def put_policy(self, name: str, policy) -> dict:
         return self._put(f"/v1/policy/{quote(name, safe='')}", {"policy": policy})
+
+
+def control_plane_consent(
+    client: ControlPlaneClient,
+    *,
+    poll_ms: int = 500,
+    timeout_ms: int = 30000,
+    on_pending=None,
+    sleep=None,
+):
+    """A just-in-time consent provider backed by the control plane.
+
+    Use as ``with_behalf``'s ``on_prompt``: on a denied call it opens a pending
+    consent request and polls until a human approves/denies it, wiring the
+    control plane's consent surface to enforcement end-to-end."""
+    import time as _time
+
+    _sleep = sleep or (lambda ms: _time.sleep(ms / 1000))
+
+    def provider(info: dict) -> bool:
+        mandate = info.get("mandate")
+        agent = (getattr(mandate, "agent", None) if mandate else None) or info.get("tool") or "agent"
+        rec = client.request_consent(agent, info["capability"], {"tool": info.get("tool")})
+        if on_pending:
+            on_pending(rec)
+        deadline = _time.time() + timeout_ms / 1000
+        while _time.time() < deadline:
+            cur = client.get_consent(rec["id"])
+            if cur["status"] == "approved":
+                return True
+            if cur["status"] == "denied":
+                return False
+            _sleep(poll_ms)
+        return False
+
+    return provider
