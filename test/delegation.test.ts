@@ -60,9 +60,16 @@ test("a compromised middle agent cannot forge a wider child", async () => {
   const mid = root.attenuate({ can: ["spend:usd<=10"], agent: "a2" });
 
   // Attacker hand-edits the leaf token to inject a wider cap caveat, bypassing
-  // the eager check. The HMAC chain no longer replays, so it is denied.
+  // the eager check. The signature chain no longer verifies, so it is denied.
   const forged = structuredClone(mid.token);
-  forged.caveats.push({ t: "cap", can: ["spend:usd<=10000"] });
+  forged.blocks[forged.blocks.length - 1].caveats.push({ t: "cap", can: ["spend:usd<=10000"] });
   const tampered = b.import(Buffer.from(JSON.stringify(forged)).toString("base64url"));
   await assert.rejects(() => tampered.authorize("spend:usd=9999"), AuthorizationError);
+
+  // Appending a brand-new block without a valid signature is also rejected.
+  const spliced = structuredClone(mid.token);
+  spliced.blocks.push({ caveats: [{ t: "cap", can: ["spend:usd<=10000"] }], nextPub: spliced.rootPub });
+  spliced.sigs.push("AAAA");
+  const splicedM = b.import(Buffer.from(JSON.stringify(spliced)).toString("base64url"));
+  await assert.rejects(() => splicedM.authorize("spend:usd=9999"), AuthorizationError);
 });

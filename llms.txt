@@ -74,9 +74,64 @@ grant's `spend:usd<=50`.
 - `attenuate()` only ever narrows. Requesting a wider scope throws `WideningError`.
 - Effective authority = the principal's grant ∩ every narrowing along the chain.
   A compromised middle agent can never widen scope.
-- Verification is offline (signature + scope + expiry). Only revocation may need
-  a network check.
+- Verification is offline and asymmetric: any party can verify a mandate + its
+  whole chain with only the issuer's PUBLIC key (Ed25519 signature chain). Only
+  revocation may need a network check.
+- A mandate restored with `import()` can be verified/authorized/audited but NOT
+  attenuated (it carries no delegation key). Attenuate the live in-memory mandate.
 - Prefer short `expiresIn`. Prefer the tightest `can` that still does the job.
+
+## Offline third-party verification
+
+```ts
+const verifier = createBehalf({ trust: [issuerPublicKey] }); // no secret
+await verifier.import(serializedMandate).authorize("spend:usd=20");
+```
+
+## CLI
+
+```
+behalf pubkey
+behalf grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
+behalf inspect <mandate>
+behalf authorize <mandate> <action>
+behalf revoke <mandate-id>
+behalf audit <mandate-id>
+```
+
+## Standalone MCP server
+
+`node dist/mcp-server.js` (bin: `behalf-mcp`) speaks JSON-RPC 2.0 over stdio and
+exposes request_mandate / present_mandate / check_authority to any MCP client.
+
+## A2A (agent-to-agent over HTTP)
+
+```ts
+import { behalfFetch, guard } from "behalf/a2a";
+// callee verifies + authorizes each request (offline, public key only):
+const gate = guard({ engine, capability: () => "spend:usd<=50" });
+// caller forwards its mandate, narrowed so the callee gets strictly less:
+await behalfFetch(url, mandate, { method: "POST" }, { attenuate: { can: ["spend:usd<=20"] } });
+```
+
+## Capability linting
+
+`lint(caps)` flags loose scopes: `*` (warn), unbounded `spend:` (warn),
+rate-less `send:` (info), unparseable (error), duplicates (warn). Prefer scopes
+that lint clean. Also `behalf lint <cap> ...` on the CLI.
+
+## Persistence
+
+`FileRevocationStore(path)` and `FileAuditStore(path)` persist revocation and the
+tamper-evident audit log across restarts; pass them to `createBehalf({...})`.
+
+## Cross-language interop
+
+The TypeScript and Python ports are wire-compatible: keys are raw Ed25519
+(base64url) and canonical block bytes are identical, so a mandate issued in one
+verifies/authorizes in the other (including attenuated chains). Cross-language is
+verify-only — attenuation needs the in-memory delegation key, so delegate within
+the issuing port. Checked by `npm run test:interop`.
 
 ## Discovery tools (MCP)
 

@@ -19,16 +19,28 @@ export type Caveat =
   | { t: "expires"; at: number }
   | { t: "id"; id: string };
 
+/**
+ * One link in the delegation chain: a set of restrictions plus the public key
+ * (`nextPub`) that authorizes whoever signs the *next* block.
+ */
+export interface Block {
+  caveats: Caveat[];
+  /** base64url SPKI Ed25519 public key for the next block's signature. */
+  nextPub: string;
+}
+
 /** Wire form of a mandate — exactly what gets serialized/transmitted. */
 export interface MandateToken {
   /** Format version. */
-  v: 1;
+  v: 2;
   /** Root identifier (stable across the whole delegation chain). */
   id: string;
-  /** Ordered restrictions, root grant first, narrowings appended after. */
-  caveats: Caveat[];
-  /** HMAC chain signature over (id, caveats...). Hex. */
-  sig: string;
+  /** Ordered blocks: root grant first, narrowings appended after. */
+  blocks: Block[];
+  /** Per-block Ed25519 signatures (base64url). sigs[i] signs blocks[i]. */
+  sigs: string[];
+  /** Issuer (root) public key, base64url SPKI — pin this to establish trust. */
+  rootPub: string;
 }
 
 /** Options for {@link Behalf.grant}. */

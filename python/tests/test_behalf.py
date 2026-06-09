@@ -10,6 +10,7 @@ from behalf import create_behalf  # noqa: E402
 from behalf.audit import verify  # noqa: E402
 from behalf.capability import is_narrowing, parse, permits  # noqa: E402
 from behalf.errors import AuthorizationError, IntegrityError, WideningError  # noqa: E402
+from behalf.lint import is_clean, lint  # noqa: E402
 from behalf.mcp import behalf_mcp_tools, with_behalf  # noqa: E402
 
 
@@ -74,12 +75,15 @@ class MandateTests(unittest.TestCase):
             m.authorize("read:calendar")
 
     def test_tamper(self):
+        import copy
+
         b = create_behalf()
         m = b.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
-        forged = {**m.token, "caveats": [dict(c) for c in m.token["caveats"]]}
-        for c in forged["caveats"]:
-            if c["t"] == "cap":
-                c["can"] = ["*"]
+        forged = copy.deepcopy(m.token)
+        for block in forged["blocks"]:
+            for c in block["caveats"]:
+                if c["t"] == "cap":
+                    c["can"] = ["*"]
         with self.assertRaises(IntegrityError):
             b.verify_signature(forged)
 
@@ -131,14 +135,17 @@ class DelegationTests(unittest.TestCase):
             leaf.authorize("read:calendar")
 
     def test_forged_wider_child_denied(self):
+        import base64
+        import copy
+        import json
+
         b = create_behalf()
         root = b.grant(principal="u", agent="a1", can=["spend:usd<=10"], expires_in="1h")
         mid = root.attenuate(can=["spend:usd<=10"], agent="a2")
-        forged = {**mid.token, "caveats": [*mid.token["caveats"], {"t": "cap", "can": ["spend:usd<=10000"]}]}
+        forged = copy.deepcopy(mid.token)
+        forged["blocks"][-1]["caveats"].append({"t": "cap", "can": ["spend:usd<=10000"]})
         tampered = b.import_(
-            __import__("base64").urlsafe_b64encode(
-                __import__("json").dumps(forged).encode()
-            ).rstrip(b"=").decode()
+            base64.urlsafe_b64encode(json.dumps(forged).encode()).rstrip(b"=").decode()
         )
         with self.assertRaises(AuthorizationError):
             tampered.authorize("spend:usd=9999")
@@ -200,6 +207,72 @@ class AuditTests(unittest.TestCase):
         broken = verify(entries)
         self.assertFalse(broken["ok"])
         self.assertEqual(broken["brokenAt"], 0)
+
+
+class AsymmetricTests(unittest.TestCase):
+    def test_verifier_with_public_key_only(self):
+        issuer = create_behalf()
+        m = issuer.grant(principal="u", agent="a", can=["spend:usd<=50"], expires_in="1h")
+        verifier = create_behalf(trust=[issuer.public_key])
+        received = verifier.import_(m.serialize())
+        received.authorize("spend:usd=20")
+        with self.assertRaises(AuthorizationError):
+            received.authorize("spend:usd=60")
+
+    def test_untrusted_issuer_rejected(self):
+        issuer = create_behalf()
+        m = issuer.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
+        stranger = create_behalf()
+        received = stranger.import_(m.serialize())
+        with self.assertRaises(AuthorizationError):
+            received.authorize("read:calendar")
+
+    def test_attenuated_chain_verifies(self):
+        issuer = create_behalf()
+        root = issuer.grant(principal="u", agent="a1", can=["spend:usd<=50"], expires_in="1h")
+        child = root.attenuate(can=["spend:usd<=10"], agent="a2")
+        verifier = create_behalf(trust=[issuer.public_key])
+        received = verifier.import_(child.serialize())
+        received.authorize("spend:usd=10")
+        with self.assertRaises(AuthorizationError):
+            received.authorize("spend:usd=11")
+
+    def test_imported_cannot_delegate(self):
+        issuer = create_behalf()
+        m = issuer.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
+        self.assertTrue(m.can_delegate)
+        imported = issuer.import_(m.serialize())
+        self.assertFalse(imported.can_delegate)
+        with self.assertRaises(Exception):
+            imported.attenuate(can=["read:calendar"])
+
+
+class LintTests(unittest.TestCase):
+    def test_clean_scope(self):
+        self.assertEqual(lint(["read:calendar", "spend:usd<=50"]), [])
+        self.assertTrue(is_clean(["read:calendar", "spend:usd<=50"]))
+
+    def test_wildcard_warns(self):
+        f = lint(["*"])[0]
+        self.assertEqual(f.level, "warn")
+        self.assertEqual(f.rule, "wildcard")
+
+    def test_unbounded_spend_warns(self):
+        f = next(x for x in lint(["spend:usd"]) if x.rule == "unbounded-amount")
+        self.assertEqual(f.level, "warn")
+
+    def test_rateless_send_is_info(self):
+        findings = lint(["send:email"])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "info")
+        self.assertTrue(is_clean(["send:email"]))
+
+    def test_unparseable_is_error(self):
+        self.assertEqual(lint(["nocolon"])[0].level, "error")
+
+    def test_duplicate_warns(self):
+        f = next(x for x in lint(["read:calendar", "read:calendar"]) if x.rule == "duplicate")
+        self.assertEqual(f.level, "warn")
 
 
 class FakeServer:

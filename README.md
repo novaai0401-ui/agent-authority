@@ -92,17 +92,36 @@ grant's `spend:usd<=50`.
 
 ### The intersection rule is structural
 
-A mandate is a macaroon-style HMAC chain. A holder attenuates by *appending*
-narrowing caveats — keylessly and offline — but can never remove or reorder an
-earlier one. An agent's effective authority is always:
+A mandate is an **Ed25519 signature chain** (biscuit-style). Block 0 (the root
+grant) is signed by the issuer; each block publishes a fresh public key, and the
+*next* block is signed by the matching private key. A holder attenuates by
+*appending* a narrowing block signed with the key it was handed — keylessly with
+respect to the issuer, and offline. An agent's effective authority is always:
 
 ```
 principal's grant  ∩  every narrowing along the chain
 ```
 
-A compromised middle agent can therefore never widen scope. This closes the
-OAuth "delegation-chain splicing" weakness — see
+A compromised middle agent can never widen scope, and no block can be removed or
+spliced. This closes the OAuth "delegation-chain splicing" weakness — see
 [`test/delegation.test.ts`](./test/delegation.test.ts).
+
+### Offline, third-party verification (public key only)
+
+Because the chain is asymmetric, **any** relying party can verify a mandate and
+its full delegation chain with only the issuer's public key — no shared secret:
+
+```ts
+const issuer = createBehalf();
+const pub = issuer.publicKey;                 // share this freely
+
+const verifier = createBehalf({ trust: [pub] }); // holds no secret
+const m = verifier.import(serializedMandate);
+await m.authorize("spend:usd=20");            // verified + checked offline
+```
+
+A mandate restored via `import` can be verified, authorized, and audited, but
+not delegated (it doesn't carry the private delegation key) — a safe default.
 
 ## What maps to the standard underneath
 
@@ -123,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 35 tests across capability/mandate/delegation/revocation/audit/mcp
+npm test             # 58 tests: capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint
 ```
 
 Run the reference integrations:
@@ -132,6 +151,91 @@ Run the reference integrations:
 npm run example:data-access   # a read-only data agent
 npm run example:spend         # a budget- and rate-limited spend agent
 npm run example:delegation    # two-agent attenuation + cascade revoke
+npm run example:a2a           # agent-to-agent delegation over HTTP
+```
+
+### CLI
+
+After `npm run build`, the `behalf` CLI manages mandates from the terminal
+(state lives under `$BEHALF_HOME`, default `~/.behalf`):
+
+```bash
+node dist/cli.js pubkey
+M=$(node dist/cli.js grant --principal alice --agent research \
+      --can "read:calendar" --can "spend:usd<=50" --expires 1h)
+node dist/cli.js inspect "$M"
+node dist/cli.js authorize "$M" "spend:usd=20"   # ALLOW
+node dist/cli.js authorize "$M" "spend:usd=99"   # DENY
+node dist/cli.js revoke <mandate-id>
+node dist/cli.js audit  <mandate-id>
+```
+
+### MCP server
+
+A dependency-free stdio MCP server exposes the discovery tools to any MCP client:
+
+```bash
+node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
+```
+
+```jsonc
+// register with an MCP client, e.g.:
+{ "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
+```
+
+### A2A — agent-to-agent over HTTP
+
+`behalf/a2a` carries a verifiable delegation chain across the network. The caller
+attaches its mandate (optionally attenuating it first); the callee verifies the
+chain offline with only the issuer's public key, then authorizes the action:
+
+```ts
+import { behalfFetch, guard } from "behalf/a2a";
+
+// callee: a node:http middleware that authorizes each request
+const gate = guard({ engine: callee, capability: () => "spend:usd<=50" });
+// ... in your http handler: if (!(await gate(req, res))) return;
+
+// caller: forward the mandate, narrowed so the callee gets strictly less
+await behalfFetch(url, mandate, { method: "POST" },
+  { attenuate: { can: ["spend:usd<=20"] } });
+```
+
+### Capability linting
+
+`lint()` flags loose scopes (`*`, unbounded `spend:`, rate-less `send:`, ...) so
+agents and humans write tight capabilities by default:
+
+```ts
+import { lint } from "behalf";
+lint(["spend:usd", "*"]); // → warnings: add a limit; avoid wildcard
+```
+
+Also available as `behalf lint <cap> ...` on the CLI.
+
+### Persistence
+
+`FileRevocationStore` and `FileAuditStore` keep revocation and audit state across
+restarts with zero infrastructure:
+
+```ts
+import { createBehalf, FileRevocationStore, FileAuditStore } from "behalf";
+const behalf = createBehalf({
+  revocations: new FileRevocationStore("./revocations.json"),
+  audit: new FileAuditStore("./audit.jsonl"),
+});
+```
+
+### Cross-language interop
+
+A mandate issued by either reference port verifies in the other: both encode keys
+as raw Ed25519 (base64url) and produce byte-identical canonical block bytes, so a
+TS-issued mandate authorizes under the Python verifier and vice versa — including
+attenuated multi-block chains. Checked by `npm run test:interop` (needs `python3`)
+and in CI.
+
+```bash
+npm run test:interop   # PY⇄TS, issue in one port, verify/authorize in the other
 ```
 
 ### Python
@@ -140,7 +244,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 28 tests, zero dependencies
+python3 -m unittest discover -s tests   # 38 tests, zero dependencies
 ```
 
 ```python
@@ -165,10 +269,16 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 ## Status
 
-MVP per the spec: the five verbs working end-to-end, two-hop attenuation-only
-delegation, offline verification with TTL + revocation checks, a local-first
-tamper-evident audit log, the MCP middleware, and `llms.txt`. Deferred: deep
-multi-hop tuning, asymmetric third-party verification, a hosted control plane.
+Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
+(any party verifies offline with just the issuer public key), **file-backed
+persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
+stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
+between agents, **capability linting**, and **cross-language wire interop**
+(TS⇄Python mandates verify in either port). CI runs both test suites plus the
+interop check on Node 20/22 and Python 3.9/3.12.
+
+Deferred: deep multi-hop tuning and the Phase-2 hosted control plane (managed
+revocation propagation, audit retention, and a consent/policy dashboard).
 
 ## License
 

@@ -1,52 +1,70 @@
-"""Macaroon-style HMAC chaining (mirrors the TypeScript implementation).
+"""Asymmetric attenuable tokens (Ed25519 signature chain) — mirrors the TS core.
 
-    sig_0 = HMAC(root_key, identifier)
-    sig_i = HMAC(sig_{i-1}, serialize(caveat_i))
+Block 0 (the root grant) is signed by the issuer's private key; every block
+publishes a fresh public key (``nextPub``) and the next block is signed by the
+matching private key. Verification needs only public keys, so any relying party
+can check a mandate and its whole chain offline without the issuer's secret.
 
-Appending a caveat needs only the *previous* signature, not the root key — so a
-holder can attenuate offline and keylessly, yet can never remove or reorder an
-earlier caveat. This structurally closes the delegation-chain splicing weakness.
+Keys are raw 32-byte Ed25519 values, base64url-encoded for transport. (The TS
+port uses SPKI/PKCS8 DER; the JSON token *shape* is identical, only the key
+encoding differs between the two reference ports.)
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
-import hmac
+import json
 import secrets
 import uuid
 
-Caveat = dict
+from . import _ed25519
+
+Block = dict
 
 
-def serialize_caveat(c: Caveat) -> str:
-    """Deterministic, canonical serialization of a caveat for hashing."""
-    t = c["t"]
-    if t == "principal":
-        return f"principal={c['principal']}"
-    if t == "agent":
-        return f"agent={c['agent']}"
-    if t == "cap":
-        return "cap=" + ",".join(sorted(c["can"]))
-    if t == "expires":
-        return f"expires={c['at']}"
-    if t == "id":
-        return f"id={c['id']}"
-    raise ValueError(f"unknown caveat type {t!r}")
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
-def _hmac(key: bytes, data: str) -> bytes:
-    return hmac.new(key, data.encode("utf-8"), hashlib.sha256).digest()
+def _unb64(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def chain_signature(root_key: bytes, identifier: str, caveats: list[Caveat]) -> str:
-    sig = _hmac(root_key, identifier)
-    for c in caveats:
-        sig = _hmac(sig, serialize_caveat(c))
-    return sig.hex()
+class KeyPair:
+    def __init__(self, private_b64: str, public_b64: str) -> None:
+        self.private = private_b64
+        self.public = public_b64
 
 
-def extend_signature(prev_sig: str, caveat: Caveat) -> str:
-    return _hmac(bytes.fromhex(prev_sig), serialize_caveat(caveat)).hex()
+def new_key_pair() -> KeyPair:
+    seed = secrets.token_bytes(32)
+    return KeyPair(_b64(seed), _b64(_ed25519.publickey(seed)))
+
+
+def canonical_block(block: Block) -> bytes:
+    return json.dumps(
+        {"caveats": block["caveats"], "nextPub": block["nextPub"]},
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def sign_block(private_b64: str, block: Block) -> str:
+    seed = _unb64(private_b64)
+    pk = _ed25519.publickey(seed)
+    return _b64(_ed25519.signature(canonical_block(block), seed, pk))
+
+
+def verify_block(public_b64: str, block: Block, sig_b64: str) -> bool:
+    try:
+        return _ed25519.checkvalid(_unb64(sig_b64), canonical_block(block), _unb64(public_b64))
+    except Exception:
+        return False
+
+
+def public_of(private_b64: str) -> str:
+    return _b64(_ed25519.publickey(_unb64(private_b64)))
 
 
 def sha256_hex(data: str) -> str:
@@ -55,7 +73,3 @@ def sha256_hex(data: str) -> str:
 
 def new_id() -> str:
     return str(uuid.uuid4())
-
-
-def new_root_key() -> bytes:
-    return secrets.token_bytes(32)
