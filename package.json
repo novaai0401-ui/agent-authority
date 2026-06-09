@@ -22,7 +22,8 @@
   ],
   "bin": {
     "behalf": "./dist/cli.js",
-    "behalf-mcp": "./dist/mcp-server.js"
+    "behalf-mcp": "./dist/mcp-server.js",
+    "behalf-control-plane": "./dist/control-plane.js"
   },
   "exports": {
     ".": {
@@ -41,6 +42,14 @@
       "types": "./dist/mcp-server.d.ts",
       "import": "./dist/mcp-server.js"
     },
+    "./control-plane": {
+      "types": "./dist/control-plane.d.ts",
+      "import": "./dist/control-plane.js"
+    },
+    "./remote": {
+      "types": "./dist/remote.d.ts",
+      "import": "./dist/remote.js"
+    },
     "./llms.txt": "./llms.txt"
   },
   "scripts": {
@@ -51,7 +60,8 @@
     "example:data-access": "node dist-test/examples/data-access-agent.js",
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
     "example:delegation": "node dist-test/examples/two-agent-delegation.js",
-    "example:a2a": "node dist-test/examples/a2a-delegation.js"
+    "example:a2a": "node dist-test/examples/a2a-delegation.js",
+    "example:control-plane": "node dist-test/examples/control-plane.js"
   },
   "engines": {
     "node": ">=18"

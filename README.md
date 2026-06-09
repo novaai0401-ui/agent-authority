@@ -142,16 +142,17 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 58 tests: capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint
+npm test             # 64 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane
 ```
 
 Run the reference integrations:
 
 ```bash
-npm run example:data-access   # a read-only data agent
-npm run example:spend         # a budget- and rate-limited spend agent
-npm run example:delegation    # two-agent attenuation + cascade revoke
-npm run example:a2a           # agent-to-agent delegation over HTTP
+npm run example:data-access     # a read-only data agent
+npm run example:spend           # a budget- and rate-limited spend agent
+npm run example:delegation      # two-agent attenuation + cascade revoke
+npm run example:a2a             # agent-to-agent delegation over HTTP
+npm run example:control-plane   # revocation propagation across agents
 ```
 
 ### CLI
@@ -226,6 +227,29 @@ const behalf = createBehalf({
 });
 ```
 
+### Control plane (revocation propagation + audit retention)
+
+For multi-agent deployments, the control plane centralizes revocation (revoke
+once, every agent sees it), retains one tamper-evident audit log, and offers a
+consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
+same stores — point agents at it with the `behalf/remote` client stores and the
+five-verb API is unchanged.
+
+```bash
+node dist/control-plane.js     # bin: behalf-control-plane; dashboard at /
+```
+
+```ts
+import { createBehalf } from "behalf";
+import { HttpRevocationStore, HttpAuditStore } from "behalf/remote";
+
+const behalf = createBehalf({
+  revocations: new HttpRevocationStore("http://localhost:8787"),
+  audit: new HttpAuditStore("http://localhost:8787"),
+});
+// behalf.revoke(id) now propagates to every agent on the same control plane.
+```
+
 ### Cross-language interop
 
 A mandate issued by either reference port verifies in the other: both encode keys
@@ -273,12 +297,13 @@ Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
 persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
-between agents, **capability linting**, and **cross-language wire interop**
-(TS⇄Python mandates verify in either port). CI runs both test suites plus the
-interop check on Node 20/22 and Python 3.9/3.12.
+between agents, **capability linting**, **cross-language wire interop**
+(TS⇄Python mandates verify in either port), and a **control plane** for
+revocation propagation, audit retention, and consent/policy with a dashboard. CI
+runs both test suites plus the interop check on Node 20/22 and Python 3.9/3.12.
 
-Deferred: deep multi-hop tuning and the Phase-2 hosted control plane (managed
-revocation propagation, audit retention, and a consent/policy dashboard).
+Deferred: deep multi-hop tuning, a Python control-plane client, and hardening of
+the hosted surface (auth, multi-tenant isolation, durable consent storage).
 
 ## License
 

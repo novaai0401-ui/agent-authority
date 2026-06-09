@@ -46,6 +46,18 @@ export {
   type AuditStore,
 } from "./store.js";
 export { FileRevocationStore, FileAuditStore } from "./persist.js";
+export {
+  createControlPlane,
+  type ControlPlane,
+  type ControlPlaneOptions,
+  type ConsentRecord,
+} from "./control-plane.js";
+export {
+  HttpRevocationStore,
+  HttpAuditStore,
+  ControlPlaneClient,
+  type RemoteOptions,
+} from "./remote.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
 export {

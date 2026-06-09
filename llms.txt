@@ -125,6 +125,23 @@ that lint clean. Also `behalf lint <cap> ...` on the CLI.
 `FileRevocationStore(path)` and `FileAuditStore(path)` persist revocation and the
 tamper-evident audit log across restarts; pass them to `createBehalf({...})`.
 
+## Control plane (multi-agent)
+
+A thin HTTP service centralizes revocation (revoke once, all agents see it),
+retains one tamper-evident audit log, and offers consent/policy endpoints +
+dashboard. Point agents at it with `behalf/remote`:
+
+```ts
+import { HttpRevocationStore, HttpAuditStore } from "behalf/remote";
+const behalf = createBehalf({
+  revocations: new HttpRevocationStore("http://localhost:8787"),
+  audit: new HttpAuditStore("http://localhost:8787"),
+});
+```
+
+Run it: `node dist/control-plane.js` (bin `behalf-control-plane`). The five-verb
+API and offline verification are unchanged — only where revocation/audit live.
+
 ## Cross-language interop
 
 The TypeScript and Python ports are wire-compatible: keys are raw Ed25519
