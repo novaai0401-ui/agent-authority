@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs.",
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "sideEffects": false,
   "repository": {
     "type": "git",

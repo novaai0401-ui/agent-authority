@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { text = "PolyForm Strict License 1.0.0 (SEE LICENSE)" }
+classifiers = ["License :: Other/Proprietary License"]
 keywords = ["agent", "authority", "delegation", "capability", "mandate", "mcp", "a2a", "authorization", "ai"]
 dependencies = []
 
