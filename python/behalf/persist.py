@@ -46,7 +46,7 @@ class FileAuditStore:
             open(path, "w", encoding="utf-8").close()
             self._last = None
 
-    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict:
+    def record(self, *, mandate_id, chain, action, decision, reason=None, issuer=None) -> dict:
         from .audit import seal
 
         entry = seal(
@@ -56,6 +56,7 @@ class FileAuditStore:
             action=action,
             decision=decision,
             reason=reason,
+            issuer=issuer,
         )
         self.append(entry)
         return entry
@@ -71,6 +72,9 @@ class FileAuditStore:
 
     def for_mandate(self, mandate_id: str) -> list[dict]:
         return [e for e in self.all() if mandate_id in e["chain"]]
+
+    def for_issuer(self, issuer: str) -> list[dict]:
+        return [e for e in self.all() if e.get("issuer") == issuer]
 
 
 class FileConsentStore:

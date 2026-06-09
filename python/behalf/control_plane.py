@@ -14,7 +14,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .store import (
     MemoryAuditStore,
@@ -39,9 +39,8 @@ def _list_revoked(store) -> list:
     return sorted(getattr(store, "_revoked", set()))
 
 
-def _dashboard(revocations, audit, consents) -> str:
+def _dashboard(revocations, recent, consents) -> str:
     revoked = _list_revoked(revocations)
-    recent = list(reversed(audit.all()[-20:]))
     pending = [c for c in consents if c["status"] == "pending"]
     rev_rows = "".join(f"<tr><td><code>{_esc(i)}</code></td></tr>" for i in revoked) or "<tr><td>none</td></tr>"
     pend_rows = (
@@ -81,11 +80,13 @@ class ControlPlane:
         rate=None,
         consents=None,
         policies=None,
+        tenant_scoped: bool = False,
         token: Optional[str] = None,
     ) -> None:
         self.revocations = revocations or MemoryRevocationStore()
         self.audit = audit or MemoryAuditStore()
         self.rate = rate or MemoryRateStore()
+        self.tenant_scoped = tenant_scoped
         self.token = token
         self.consents = consents or MemoryConsentStore()
         self.policies = policies or MemoryPolicyStore()
@@ -147,13 +148,20 @@ class ControlPlane:
                     return self._send(401, {"error": "unauthorized"})
                 path = urlparse(self.path).path
                 if path == "/":
-                    return self._send_html(_dashboard(cp.revocations, cp.audit, cp.consents.list()))
+                    recent = [] if cp.tenant_scoped else list(reversed(cp.audit.all()[-20:]))
+                    return self._send_html(_dashboard(cp.revocations, recent, cp.consents.list()))
                 if path == "/v1/revoked":
                     return self._send(200, {"ids": _list_revoked(cp.revocations)})
                 m = re.match(r"^/v1/revoked/(.+)$", path)
                 if m:
                     return self._send(200, {"revoked": bool(cp.revocations.is_revoked(unquote(m.group(1))))})
                 if path == "/v1/audit":
+                    qs = parse_qs(urlparse(self.path).query)
+                    issuer = qs.get("issuer", [None])[0]
+                    if issuer:
+                        return self._send(200, {"entries": cp.audit.for_issuer(issuer)})
+                    if cp.tenant_scoped:
+                        return self._send(403, {"error": "issuer query required (tenant-scoped)"})
                     return self._send(200, {"entries": cp.audit.all()})
                 m = re.match(r"^/v1/audit/(.+)$", path)
                 if m:
@@ -194,6 +202,7 @@ class ControlPlane:
                                 action=fields["action"],
                                 decision=fields["decision"],
                                 reason=fields.get("reason"),
+                                issuer=fields.get("issuer"),
                             )
                         return self._send(200, {"entry": entry})
                     if body.get("entry"):
@@ -253,7 +262,14 @@ class ControlPlane:
 
 
 def create_control_plane(
-    *, revocations=None, audit=None, rate=None, consents=None, policies=None, token: Optional[str] = None
+    *,
+    revocations=None,
+    audit=None,
+    rate=None,
+    consents=None,
+    policies=None,
+    tenant_scoped: bool = False,
+    token: Optional[str] = None,
 ) -> ControlPlane:
     return ControlPlane(
         revocations=revocations,
@@ -261,5 +277,6 @@ def create_control_plane(
         rate=rate,
         consents=consents,
         policies=policies,
+        tenant_scoped=tenant_scoped,
         token=token,
     )

@@ -146,6 +146,7 @@ class Behalf:
                 action=action,
                 decision="deny",
                 reason=reason,
+                issuer=token["rootPub"],
             )
             raise AuthorizationError(action, reason)
 
@@ -193,7 +194,9 @@ class Behalf:
             if not allowed:
                 return deny(f"rate limit exceeded ({matched.rate.value:g}/{matched.rate.per})")
 
-        self._audit.record(mandate_id=chain[-1], chain=chain, action=action, decision="allow")
+        self._audit.record(
+            mandate_id=chain[-1], chain=chain, action=action, decision="allow", issuer=token["rootPub"]
+        )
 
     def revoke(self, id: str) -> None:
         self._revocations.revoke(id)

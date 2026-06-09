@@ -55,9 +55,10 @@ class HttpRevocationStore(_Base):
 class HttpAuditStore(_Base):
     """Tamper-evident audit retained centrally by the control plane."""
 
-    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict:
+    def record(self, *, mandate_id, chain, action, decision, reason=None, issuer=None) -> dict:
         fields = {
             "mandateId": mandate_id,
+            "issuer": issuer,
             "chain": chain,
             "action": action,
             "decision": decision,
@@ -67,6 +68,9 @@ class HttpAuditStore(_Base):
 
     def append(self, entry: dict) -> None:
         self._post("/v1/audit", {"entry": entry})
+
+    def for_issuer(self, issuer: str) -> list[dict]:
+        return self._get(f"/v1/audit?issuer={quote(issuer, safe='')}")["entries"]
 
     def all(self) -> list[dict]:
         return self._get("/v1/audit")["entries"]

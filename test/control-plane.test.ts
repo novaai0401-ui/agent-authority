@@ -124,6 +124,45 @@ test("rate limit is shared across agents via the control plane", async () => {
   });
 });
 
+test("audit is scoped per issuer (multi-tenant isolation)", async () => {
+  await withControlPlane(async (base) => {
+    // Two independent issuers (different keys) share one control plane.
+    const tenantA = createBehalf({ audit: new HttpAuditStore(base) });
+    const tenantB = createBehalf({ audit: new HttpAuditStore(base) });
+
+    await tenantA.grant({ principal: "a", agent: "x", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+    await tenantB.grant({ principal: "b", agent: "y", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+    await tenantB.grant({ principal: "b", agent: "z", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+
+    const reader = new HttpAuditStore(base);
+    const aEntries = await reader.forIssuer(tenantA.publicKey);
+    const bEntries = await reader.forIssuer(tenantB.publicKey);
+
+    assert.equal(aEntries.length, 1);
+    assert.equal(bEntries.length, 2);
+    assert.ok(aEntries.every((e) => e.issuer === tenantA.publicKey));
+    assert.ok(bEntries.every((e) => e.issuer === tenantB.publicKey));
+  });
+});
+
+test("tenant-scoped mode refuses the unscoped audit list", async () => {
+  await withControlPlane(
+    async (base) => {
+      const tenant = createBehalf({ audit: new HttpAuditStore(base) });
+      await tenant.grant({ principal: "u", agent: "x", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+
+      // Unscoped list is refused...
+      const res = await fetch(`${base}/v1/audit`);
+      assert.equal(res.status, 403);
+
+      // ...but a scoped query works.
+      const scoped = await new HttpAuditStore(base).forIssuer(tenant.publicKey);
+      assert.equal(scoped.length, 1);
+    },
+    { tenantScoped: true },
+  );
+});
+
 test("consent flow: request stays pending until decided", async () => {
   await withControlPlane(async (base) => {
     const client = new ControlPlaneClient(base);

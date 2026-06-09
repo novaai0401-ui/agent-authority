@@ -18,6 +18,7 @@ def _body(e: dict) -> str:
             "seq": e["seq"],
             "ts": e["ts"],
             "mandateId": e["mandateId"],
+            "issuer": e.get("issuer") or "",
             "chain": e["chain"],
             "action": e["action"],
             "decision": e["decision"],
@@ -36,6 +37,7 @@ def seal(
     action: str,
     decision: str,
     reason: Optional[str] = None,
+    issuer: Optional[str] = None,
 ) -> dict:
     """Seal a new entry onto the chain after ``prev`` (or None for the first).
 
@@ -47,6 +49,7 @@ def seal(
         "seq": seq,
         "ts": int(time.time() * 1000),
         "mandateId": mandate_id,
+        "issuer": issuer,
         "chain": chain,
         "action": action,
         "decision": decision,

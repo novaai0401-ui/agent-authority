@@ -74,6 +74,10 @@ export class FileAuditStore implements AuditStore {
   forMandate(mandateId: string): AuditEntry[] {
     return this.all().filter((e) => e.chain.includes(mandateId));
   }
+
+  forIssuer(issuer: string): AuditEntry[] {
+    return this.all().filter((e) => e.issuer === issuer);
+  }
 }
 
 /** Consent records persisted as a JSON object keyed by id. */

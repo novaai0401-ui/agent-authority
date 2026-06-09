@@ -79,6 +79,11 @@ export class HttpAuditStore extends RemoteBase implements AuditStore {
       await this.get<{ entries: AuditEntry[] }>(`/v1/audit/${encodeURIComponent(mandateId)}`)
     ).entries;
   }
+  async forIssuer(issuer: string): Promise<AuditEntry[]> {
+    return (
+      await this.get<{ entries: AuditEntry[] }>(`/v1/audit?issuer=${encodeURIComponent(issuer)}`)
+    ).entries;
+  }
 }
 
 /** Rate limiting enforced centrally — one cap shared across all agents. */

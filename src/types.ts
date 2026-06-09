@@ -68,7 +68,7 @@ export interface AttenuateOptions {
 /** The decision fields of an audit record, before it is sealed into the chain. */
 export type AuditFields = Pick<
   AuditEntry,
-  "mandateId" | "chain" | "action" | "decision" | "reason"
+  "mandateId" | "chain" | "action" | "decision" | "reason" | "issuer"
 >;
 
 /** A single tamper-evident audit record. */
@@ -76,6 +76,8 @@ export interface AuditEntry {
   seq: number;
   ts: number;
   mandateId: string;
+  /** Issuer (root) public key of the mandate, for per-tenant scoping. */
+  issuer?: string;
   /** Full chain of ids this token belongs to (root → leaf). */
   chain: string[];
   action: string;

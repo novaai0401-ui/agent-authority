@@ -142,7 +142,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 79 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 81 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -288,7 +288,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 51 tests, zero dependencies
+python3 -m unittest discover -s tests   # 53 tests, zero dependencies
 ```
 
 ```python
@@ -334,10 +334,12 @@ rate limiting, and the consent provider.
 
 Honest about what this reference implementation does *not* yet do:
 
-- **Single audit scope.** `GET /v1/audit` and the dashboard expose the whole
-  log to any holder of the (optional) bearer token — there is no per-tenant or
-  per-issuer scoping yet. Run one control plane per trust domain, or wait for
-  multi-tenant namespacing.
+- **Tenant separation is by issuer key, not authenticated identity.** Audit
+  entries are tagged with their issuer (root public key); query a single tenant
+  with `forIssuer(pub)` and run the plane with `tenantScoped: true` to refuse the
+  unscoped "all" list. There is still one shared bearer token, not per-tenant
+  credentials — a caller could query any issuer's audit if it knows the key.
+  Roadmap: per-tenant auth tokens bound to an issuer.
 - **Shared rate checks hit the network each call.** `HttpRateStore` must consult
   the control plane on every `authorize()` (the cap is authoritative and can't be
   cached). Revocation, by contrast, can be wrapped in `CachingRevocationStore` for

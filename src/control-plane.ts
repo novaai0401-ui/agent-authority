@@ -41,6 +41,12 @@ export interface ControlPlaneOptions {
   consents?: ConsentStore;
   /** Named-policy storage. Defaults to in-memory; use a file store to persist. */
   policies?: PolicyStore;
+  /**
+   * Multi-tenant mode: require audit queries to name an `?issuer=`, and refuse
+   * the unscoped "all entries" list (and omit it from the dashboard). Keeps one
+   * tenant from reading another's audit through a shared control plane.
+   */
+  tenantScoped?: boolean;
   /** If set, require `Authorization: Bearer <token>` on every request. */
   token?: string;
 }
@@ -77,7 +83,9 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
 
     // ---- Dashboard ----
     if (method === "GET" && path === "/") {
-      return sendHtml(res, dashboard(revocations, audit, await consents.list()));
+      // In tenant-scoped mode the global audit view is withheld.
+      const recent = options.tenantScoped ? [] : (await audit.all()).slice(-20).reverse();
+      return sendHtml(res, dashboard(revocations, recent, await consents.list()));
     }
 
     // ---- Revocation ----
@@ -113,6 +121,11 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
       return send(res, 400, { error: "fields or entry required" });
     }
     if (method === "GET" && path === "/v1/audit") {
+      const issuer = url.searchParams.get("issuer");
+      if (issuer) return send(res, 200, { entries: await audit.forIssuer(issuer) });
+      if (options.tenantScoped) {
+        return send(res, 403, { error: "issuer query required (tenant-scoped)" });
+      }
       return send(res, 200, { entries: await audit.all() });
     }
     const auditMatch = method === "GET" && /^\/v1\/audit\/(.+)$/.exec(path);
@@ -254,12 +267,10 @@ function esc(s: unknown): string {
 
 function dashboard(
   revocations: RevocationStore,
-  audit: AuditStore,
+  recent: AuditEntry[],
   consents: ConsentRecord[],
 ): string {
   const revoked = listRevoked(revocations);
-  const entries = (audit as unknown as { all(): AuditEntry[] | Promise<AuditEntry[]> }).all();
-  const recent = Array.isArray(entries) ? entries.slice(-20).reverse() : [];
   const pending = consents.filter((c) => c.status === "pending");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Behalf Control Plane</title>

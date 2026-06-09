@@ -162,6 +162,7 @@ export class Behalf implements Engine {
     const deny = async (reason: string): Promise<never> => {
       await this.auditStore.record({
         mandateId: chain[chain.length - 1],
+        issuer: token.rootPub,
         chain,
         action,
         decision: "deny",
@@ -216,6 +217,7 @@ export class Behalf implements Engine {
 
     await this.auditStore.record({
       mandateId: chain[chain.length - 1],
+      issuer: token.rootPub,
       chain,
       action,
       decision: "allow",

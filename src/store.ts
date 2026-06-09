@@ -32,6 +32,8 @@ export interface AuditStore {
   append(entry: AuditEntry): Promise<void> | void;
   /** Entries whose chain includes `mandateId`, in order. */
   forMandate(mandateId: string): Promise<AuditEntry[]> | AuditEntry[];
+  /** Entries issued under `issuer` (root public key) — per-tenant scoping. */
+  forIssuer(issuer: string): Promise<AuditEntry[]> | AuditEntry[];
   all(): Promise<AuditEntry[]> | AuditEntry[];
 }
 
@@ -159,6 +161,9 @@ export class MemoryAuditStore implements AuditStore {
   }
   forMandate(mandateId: string): AuditEntry[] {
     return this.entries.filter((e) => e.chain.includes(mandateId));
+  }
+  forIssuer(issuer: string): AuditEntry[] {
+    return this.entries.filter((e) => e.issuer === issuer);
   }
   all(): AuditEntry[] {
     return [...this.entries];

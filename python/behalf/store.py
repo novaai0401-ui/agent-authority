@@ -56,9 +56,10 @@ class MemoryPolicyStore:
 
 
 class AuditStore(Protocol):
-    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict: ...
+    def record(self, *, mandate_id, chain, action, decision, reason=None, issuer=None) -> dict: ...
     def append(self, entry: dict) -> None: ...
     def for_mandate(self, mandate_id: str) -> list[dict]: ...
+    def for_issuer(self, issuer: str) -> list[dict]: ...
     def all(self) -> list[dict]: ...
 
 
@@ -124,7 +125,7 @@ class MemoryAuditStore:
     def __init__(self) -> None:
         self._entries: list[dict] = []
 
-    def record(self, *, mandate_id, chain, action, decision, reason=None) -> dict:
+    def record(self, *, mandate_id, chain, action, decision, reason=None, issuer=None) -> dict:
         from .audit import seal
 
         entry = seal(
@@ -134,12 +135,16 @@ class MemoryAuditStore:
             action=action,
             decision=decision,
             reason=reason,
+            issuer=issuer,
         )
         self._entries.append(entry)
         return entry
 
     def append(self, entry: dict) -> None:
         self._entries.append(entry)
+
+    def for_issuer(self, issuer: str) -> list[dict]:
+        return [e for e in self._entries if e.get("issuer") == issuer]
 
     def for_mandate(self, mandate_id: str) -> list[dict]:
         return [e for e in self._entries if mandate_id in e["chain"]]

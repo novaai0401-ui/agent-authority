@@ -99,6 +99,20 @@ class ControlPlaneTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             m_a.authorize("send:email")  # cap is shared, not per-process
 
+    def test_audit_scoped_per_issuer(self):
+        a = create_behalf(audit=HttpAuditStore(self.base))
+        b = create_behalf(audit=HttpAuditStore(self.base))
+        a.grant(principal="a", agent="x", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+        b.grant(principal="b", agent="y", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+        b.grant(principal="b", agent="z", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+
+        reader = HttpAuditStore(self.base)
+        a_entries = reader.for_issuer(a.public_key)
+        b_entries = reader.for_issuer(b.public_key)
+        self.assertEqual(len(a_entries), 1)
+        self.assertEqual(len(b_entries), 2)
+        self.assertTrue(all(e["issuer"] == a.public_key for e in a_entries))
+
     def test_consent_flow(self):
         client = ControlPlaneClient(self.base)
         created = client.request_consent("agent-1", "write:email", {"to": "x@y.z"})
@@ -183,6 +197,27 @@ class ControlPlaneTests(unittest.TestCase):
         with urllib.request.urlopen(f"{self.base}/") as r:
             self.assertEqual(r.status, 200)
             self.assertIn("Behalf Control Plane", r.read().decode())
+
+
+class TenantScopedTests(unittest.TestCase):
+    def test_unscoped_audit_refused(self):
+        import urllib.error
+        import urllib.request
+
+        cp = create_control_plane(tenant_scoped=True)
+        port = cp.listen(0)
+        base = f"http://127.0.0.1:{port}"
+        try:
+            tenant = create_behalf(audit=HttpAuditStore(base))
+            tenant.grant(principal="u", agent="x", can=["read:calendar"], expires_in="1h").authorize(
+                "read:calendar"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(f"{base}/v1/audit")
+            self.assertEqual(ctx.exception.code, 403)
+            self.assertEqual(len(HttpAuditStore(base).for_issuer(tenant.public_key)), 1)
+        finally:
+            cp.close()
 
 
 class TokenTests(unittest.TestCase):
