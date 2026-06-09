@@ -7,8 +7,7 @@ Agent authority is becoming required infrastructure: multi-agent systems are
 already the norm, yet most tool servers ship with no auth at all. The *standard*
 for agent identity and delegation is being defined by NIST, the IETF, and the
 Linux Foundation's Agentic AI Foundation. Behalf doesn't try to win that race —
-it's the clean, neutral, AI-legible **implementation** of it. The `requests` of
-the agent era: the install nobody reinvents.
+it's a clean, neutral **implementation** of it.
 
 Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token that proves *who authorized what, within which limits, and
@@ -82,8 +81,9 @@ grant's `spend:usd<=50`.
 1. **Thin & end-of-chain.** Zero runtime dependencies — built on the platform's
    own crypto.
 2. **One obvious way.** Exactly one canonical method per task.
-3. **AI-legible by default.** Ships with an MCP server, [`llms.txt`](./llms.txt),
-   and typed [schemas](./schemas) so coding agents call it correctly.
+3. **Typed & discoverable.** Ships with an MCP server and typed
+   [schemas](./schemas) so integrations are correct by construction. (Automated
+   ingestion/reuse is restricted — see [llms.txt](./llms.txt).)
 4. **Standards-tracking, not standards-defining.** A clean facade over
    SPIFFE / OAuth 2.1 OBO / capability tokens.
 5. **Neutral.** No cloud, model, or framework lock-in.
@@ -311,7 +311,7 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 - **`behalf`** (npm) — the core TypeScript library, near-zero deps.
 - **`behalf/mcp`** + **`behalf/a2a`** — drop-in enforcement middleware.
 - **`behalf`** (PyPI) — Python port, identical API shape.
-- **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
+- **MCP server + typed schemas** — the integration kit (`llms.txt` is a usage/AI policy, not an ingestion guide).
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
 ## Status
@@ -366,4 +366,8 @@ offline-verifiable mandates); they are durability/scaling/hardening trade-offs.
 
 ## License
 
-MIT.
+**PolyForm Strict License 1.0.0** — see [LICENSE](./LICENSE). You may **use** the
+software, but you may **not** distribute it or make changes or new works based on
+it. An additional AI/automated-use policy (no training, crawling, or
+re-implementation) is in [llms.txt](./llms.txt). For any other use, contact the
+maintainers via the issue tracker.

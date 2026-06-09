@@ -28,7 +28,7 @@ to [Semantic Versioning](https://semver.org/).
 - **`CachingRevocationStore`** — bounded-staleness revocation cache.
 - **Tooling.** `behalf` CLI (grant/inspect/authorize/revoke/audit/lint/
   quickstart), `behalf-mcp` and `behalf-control-plane` binaries, dynamic
-  per-surface quickstarts for any AI, `llms.txt`, and JSON schemas.
+  per-surface quickstarts for any AI, and JSON schemas.
 - **Cross-language wire interop** — a mandate issued in one port verifies in the
   other.
 
