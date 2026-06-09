@@ -81,12 +81,14 @@ class ControlPlane:
         consents=None,
         policies=None,
         tenant_scoped: bool = False,
+        tenants: Optional[dict] = None,
         token: Optional[str] = None,
     ) -> None:
         self.revocations = revocations or MemoryRevocationStore()
         self.audit = audit or MemoryAuditStore()
         self.rate = rate or MemoryRateStore()
         self.tenant_scoped = tenant_scoped
+        self.tenants = tenants or {}
         self.token = token
         self.consents = consents or MemoryConsentStore()
         self.policies = policies or MemoryPolicyStore()
@@ -113,10 +115,20 @@ class ControlPlane:
             def log_message(self, *args):  # silence default logging
                 pass
 
+            def _resolve(self):
+                """Return {"admin": bool, "issuer": str|None} or None if unauthorized."""
+                if not cp.token and not cp.tenants:
+                    return {"admin": True, "issuer": None}
+                auth = self.headers.get("authorization") or ""
+                bearer = auth[7:] if auth.startswith("Bearer ") else ""
+                if cp.token and bearer == cp.token:
+                    return {"admin": True, "issuer": None}
+                if cp.tenants and bearer and bearer in cp.tenants:
+                    return {"admin": False, "issuer": cp.tenants[bearer]}
+                return None
+
             def _auth_ok(self) -> bool:
-                if not cp.token:
-                    return True
-                return self.headers.get("authorization") == f"Bearer {cp.token}"
+                return self._resolve() is not None
 
             def _send(self, status: int, body) -> None:
                 data = json.dumps(body).encode("utf-8")
@@ -144,8 +156,10 @@ class ControlPlane:
                     return None
 
             def do_GET(self):
-                if not self._auth_ok():
+                caller = self._resolve()
+                if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 if path == "/":
                     recent = [] if cp.tenant_scoped else list(reversed(cp.audit.all()[-20:]))
@@ -156,6 +170,8 @@ class ControlPlane:
                 if m:
                     return self._send(200, {"revoked": bool(cp.revocations.is_revoked(unquote(m.group(1))))})
                 if path == "/v1/audit":
+                    if issuer_scope:
+                        return self._send(200, {"entries": cp.audit.for_issuer(issuer_scope)})
                     qs = parse_qs(urlparse(self.path).query)
                     issuer = qs.get("issuer", [None])[0]
                     if issuer:
@@ -165,7 +181,10 @@ class ControlPlane:
                     return self._send(200, {"entries": cp.audit.all()})
                 m = re.match(r"^/v1/audit/(.+)$", path)
                 if m:
-                    return self._send(200, {"entries": cp.audit.for_mandate(unquote(m.group(1)))})
+                    entries = cp.audit.for_mandate(unquote(m.group(1)))
+                    if issuer_scope:
+                        entries = [e for e in entries if e.get("issuer") == issuer_scope]
+                    return self._send(200, {"entries": entries})
                 if path == "/v1/consent":
                     return self._send(200, {"consents": cp.consents.list()})
                 m = re.match(r"^/v1/consent/([^/]+)$", path)
@@ -175,16 +194,19 @@ class ControlPlane:
                 m = re.match(r"^/v1/policy/([^/]+)$", path)
                 if m:
                     name = m.group(1)
+                    key = f"{issuer_scope} {name}" if issuer_scope else name
                     return (
-                        self._send(200, {"name": name, "policy": cp.policies.get(name)})
-                        if cp.policies.has(name)
+                        self._send(200, {"name": name, "policy": cp.policies.get(key)})
+                        if cp.policies.has(key)
                         else self._send(404, {"error": "not found"})
                     )
                 return self._send(404, {"error": f"no route for GET {path}"})
 
             def do_POST(self):
-                if not self._auth_ok():
+                caller = self._resolve()
+                if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 body = self._read_json() or {}
                 if path == "/v1/revoke":
@@ -195,6 +217,8 @@ class ControlPlane:
                 if path == "/v1/audit":
                     fields = body.get("fields")
                     if fields:
+                        if issuer_scope and fields.get("issuer") != issuer_scope:
+                            return self._send(403, {"error": "issuer does not match tenant token"})
                         with cp._audit_lock:
                             entry = cp.audit.record(
                                 mandate_id=fields["mandateId"],
@@ -206,6 +230,8 @@ class ControlPlane:
                             )
                         return self._send(200, {"entry": entry})
                     if body.get("entry"):
+                        if issuer_scope and body["entry"].get("issuer") != issuer_scope:
+                            return self._send(403, {"error": "issuer does not match tenant token"})
                         with cp._audit_lock:
                             cp.audit.append(body["entry"])
                         return self._send(200, {"entry": body["entry"]})
@@ -247,18 +273,50 @@ class ControlPlane:
                 return self._send(404, {"error": f"no route for POST {path}"})
 
             def do_PUT(self):
-                if not self._auth_ok():
+                caller = self._resolve()
+                if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 m = re.match(r"^/v1/policy/([^/]+)$", path)
                 if m:
                     body = self._read_json() or {}
                     name = m.group(1)
-                    cp.policies.set(name, body.get("policy", body))
-                    return self._send(200, {"name": name, "policy": cp.policies.get(name)})
+                    key = f"{issuer_scope} {name}" if issuer_scope else name
+                    cp.policies.set(key, body.get("policy", body))
+                    return self._send(200, {"name": name, "policy": cp.policies.get(key)})
                 return self._send(404, {"error": f"no route for PUT {path}"})
 
         return Handler
+
+
+def main() -> None:
+    """Run a durable, file-backed control plane (the behalf-control-plane bin).
+
+    PORT and BEHALF_HOME are read from the environment; blocks until interrupted.
+    """
+    import os
+    import time as _time
+
+    from .persist import FileAuditStore, FileConsentStore, FilePolicyStore, FileRevocationStore
+
+    home = os.environ.get("BEHALF_HOME") or os.path.join(os.path.expanduser("~"), ".behalf")
+    os.makedirs(home, exist_ok=True)
+    port = int(os.environ.get("PORT", "8787"))
+    cp = create_control_plane(
+        revocations=FileRevocationStore(os.path.join(home, "revocations.json")),
+        audit=FileAuditStore(os.path.join(home, "audit.jsonl")),
+        consents=FileConsentStore(os.path.join(home, "consents.json")),
+        policies=FilePolicyStore(os.path.join(home, "policies.json")),
+        token=os.environ.get("BEHALF_TOKEN"),
+    )
+    bound = cp.listen(port)
+    print(f"behalf control plane listening on http://127.0.0.1:{bound}  (dashboard at /)", file=__import__("sys").stderr)
+    try:
+        while True:
+            _time.sleep(3600)
+    except KeyboardInterrupt:
+        cp.close()
 
 
 def create_control_plane(
@@ -269,6 +327,7 @@ def create_control_plane(
     consents=None,
     policies=None,
     tenant_scoped: bool = False,
+    tenants: Optional[dict] = None,
     token: Optional[str] = None,
 ) -> ControlPlane:
     return ControlPlane(
@@ -278,5 +337,6 @@ def create_control_plane(
         consents=consents,
         policies=policies,
         tenant_scoped=tenant_scoped,
+        tenants=tenants,
         token=token,
     )

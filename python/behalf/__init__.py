@@ -36,6 +36,8 @@ from .persist import (
     FileRevocationStore,
 )
 from .control_plane import ControlPlane, create_control_plane
+from .mcp_server import McpServer, create_mcp_server
+from .quickstart import find_surface, generate_quickstart, list_surfaces
 from .remote import (
     ControlPlaneClient,
     HttpAuditStore,
@@ -98,4 +100,9 @@ __all__ = [
     "HttpRateStore",
     "ControlPlaneClient",
     "control_plane_consent",
+    "McpServer",
+    "create_mcp_server",
+    "generate_quickstart",
+    "find_surface",
+    "list_surfaces",
 ]

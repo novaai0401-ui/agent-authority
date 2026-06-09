@@ -220,6 +220,52 @@ class TenantScopedTests(unittest.TestCase):
             cp.close()
 
 
+class PerTenantTests(unittest.TestCase):
+    def test_tenant_token_isolates_audit(self):
+        import urllib.error
+        import urllib.request
+
+        from behalf.crypto import new_key_pair
+
+        kp_a = new_key_pair()
+        kp_b = new_key_pair()
+        issuer_a = kp_a.public
+        issuer_b = kp_b.public
+
+        cp = create_control_plane(
+            tenants={"tokA": issuer_a, "tokB": issuer_b}, token="admintok"
+        )
+        port = cp.listen(0)
+        base = f"http://127.0.0.1:{port}"
+        try:
+            a = create_behalf(root_key_pair=kp_a, audit=HttpAuditStore(base, token="tokA"))
+            b = create_behalf(root_key_pair=kp_b, audit=HttpAuditStore(base, token="tokB"))
+            a.grant(principal="a", agent="x", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+            b.grant(principal="b", agent="y", can=["read:calendar"], expires_in="1h").authorize("read:calendar")
+
+            a_entries = HttpAuditStore(base, token="tokA").all()
+            self.assertEqual(len(a_entries), 1)
+            self.assertTrue(all(e["issuer"] == issuer_a for e in a_entries))
+
+            # No credential -> 401.
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(f"{base}/v1/audit")
+            self.assertEqual(ctx.exception.code, 401)
+
+            # Cross-issuer write is refused: A holds a B-issued mandate.
+            stray = b.grant(principal="b", agent="z", can=["read:calendar"], expires_in="1h")
+            a_verifier = create_behalf(
+                root_key_pair=kp_a, trust=[issuer_b], audit=HttpAuditStore(base, token="tokA")
+            )
+            with self.assertRaises(Exception):
+                a_verifier.import_(stray.serialize()).authorize("read:calendar")
+
+            # Admin sees everything.
+            self.assertGreaterEqual(len(HttpAuditStore(base, token="admintok").all()), 2)
+        finally:
+            cp.close()
+
+
 class TokenTests(unittest.TestCase):
     def test_bearer_token_enforced(self):
         import urllib.error

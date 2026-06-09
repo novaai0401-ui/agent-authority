@@ -12,7 +12,7 @@ import {
   controlPlaneConsent,
 } from "../src/remote.js";
 import { createBehalf } from "../src/behalf.js";
-import { newKeyPair } from "../src/crypto.js";
+import { newKeyPair, exportPublicKey } from "../src/crypto.js";
 import { withBehalf, type ToolServerLike } from "../src/mcp.js";
 import { AuthorizationError } from "../src/errors.js";
 
@@ -143,6 +143,49 @@ test("audit is scoped per issuer (multi-tenant isolation)", async () => {
     assert.ok(aEntries.every((e) => e.issuer === tenantA.publicKey));
     assert.ok(bEntries.every((e) => e.issuer === tenantB.publicKey));
   });
+});
+
+test("per-tenant tokens isolate audit by authenticated identity", async () => {
+  const kpA = newKeyPair();
+  const kpB = newKeyPair();
+  const issuerA = exportPublicKey(kpA.publicKey);
+  const issuerB = exportPublicKey(kpB.publicKey);
+
+  await withControlPlane(
+    async (base) => {
+      const a = createBehalf({ rootKeyPair: kpA, audit: new HttpAuditStore(base, { token: "tokA" }) });
+      const b = createBehalf({ rootKeyPair: kpB, audit: new HttpAuditStore(base, { token: "tokB" }) });
+      await a.grant({ principal: "a", agent: "x", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+      await b.grant({ principal: "b", agent: "y", can: ["read:calendar"], expiresIn: "1h" }).authorize("read:calendar");
+
+      // Tenant A sees only its own audit, regardless of the request shape.
+      const aEntries = await new HttpAuditStore(base, { token: "tokA" }).all();
+      assert.equal(aEntries.length, 1);
+      assert.ok(aEntries.every((e) => e.issuer === issuerA));
+
+      // Even an explicit ?issuer=B is ignored for a tenant token.
+      const aProbingB = await new HttpAuditStore(base, { token: "tokA" }).forIssuer(issuerB);
+      assert.ok(aProbingB.every((e) => e.issuer === issuerA));
+
+      // No credential → 401.
+      assert.equal((await fetch(`${base}/v1/audit`)).status, 401);
+
+      // A tenant cannot write audit attributed to another issuer: A holds a
+      // B-issued mandate but audits with its own token → the record is refused.
+      const stray = b.grant({ principal: "b", agent: "z", can: ["read:calendar"], expiresIn: "1h" });
+      const aVerifier = createBehalf({
+        rootKeyPair: kpA,
+        trust: [issuerB],
+        audit: new HttpAuditStore(base, { token: "tokA" }),
+      });
+      await assert.rejects(() => aVerifier.import(stray.serialize()).authorize("read:calendar"));
+
+      // The admin token sees everything.
+      const adminAll = await new HttpAuditStore(base, { token: "admintok" }).all();
+      assert.ok(adminAll.length >= 2);
+    },
+    { tenants: { tokA: issuerA, tokB: issuerB }, token: "admintok" },
+  );
 });
 
 test("tenant-scoped mode refuses the unscoped audit list", async () => {
