@@ -153,7 +153,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 86 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 88 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -288,10 +288,12 @@ const behalf = createBehalf({
 ### Cross-language interop
 
 A mandate issued by either reference port verifies in the other: both encode keys
-as raw Ed25519 (base64url) and produce byte-identical canonical block bytes, so a
-TS-issued mandate authorizes under the Python verifier and vice versa — including
-attenuated multi-block chains. Checked by `npm run test:interop` (needs `python3`)
-and in CI.
+as raw Ed25519 (base64url) and compute **sorted-key canonical JSON** for the
+signed bytes, so a TS-issued mandate authorizes under the Python verifier and
+vice versa — including attenuated multi-block chains and the action-bound
+possession proof. A committed fixture, [`vectors/mandate-vector.json`](./vectors/mandate-vector.json),
+is verified by *both* test suites so the wire format can't drift; any third-party
+implementation should verify it too.
 
 ```bash
 npm run test:interop   # PY⇄TS, issue in one port, verify/authorize in the other
@@ -303,7 +305,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 68 tests, zero dependencies
+python3 -m unittest discover -s tests   # 70 tests, zero dependencies
 ```
 
 ```python

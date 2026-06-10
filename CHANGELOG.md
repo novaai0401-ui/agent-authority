@@ -19,6 +19,10 @@ to [Semantic Versioning](https://semver.org/).
 - **Attenuation operator direction (fixes M-1).** The narrowing check now
   rejects direction flips (e.g. narrowing `spend:usd<=50` to `spend:usd>=10`); a
   bound may only be tightened in the same direction or to an exact value within.
+- **Sorted-key canonical JSON (hardens L-1).** Signed bytes use recursively
+  sorted-key canonical JSON in both ports, so cross-implementation drift is
+  structurally impossible. A committed cross-language fixture
+  (`vectors/mandate-vector.json`) is verified by both test suites.
 
 ### Added
 

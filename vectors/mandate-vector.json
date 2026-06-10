@@ -1,0 +1,63 @@
+{
+  "description": "Cross-language Behalf test vector. Verify with trust=[pubkey] and a clock fixed at proof.ts: engine.authorize(token, action, proof) must ALLOW; tampering any field must DENY.",
+  "action": "spend:usd=10",
+  "pubkey": "9yZZ1Axmh3cYzTbiRi1eV9buX7n-AwSos7SNQStzU4Q",
+  "token": {
+    "v": 2,
+    "id": "945a7881-b73a-47ab-bb97-4493b9525b52",
+    "blocks": [
+      {
+        "caveats": [
+          {
+            "t": "principal",
+            "principal": "vector"
+          },
+          {
+            "t": "agent",
+            "agent": "root"
+          },
+          {
+            "t": "cap",
+            "can": [
+              "read:calendar",
+              "spend:usd<=50"
+            ]
+          },
+          {
+            "t": "expires",
+            "at": 1781079750224
+          }
+        ],
+        "nextPub": "aSneGp2MDwcsy-ygDO2AAFiqUrUaosaHZ9LLZCh4OO8"
+      },
+      {
+        "caveats": [
+          {
+            "t": "cap",
+            "can": [
+              "spend:usd<=20"
+            ]
+          },
+          {
+            "t": "agent",
+            "agent": "sub"
+          },
+          {
+            "t": "id",
+            "id": "6e512876-efc6-4dd1-97a8-be14650e3e4a"
+          }
+        ],
+        "nextPub": "dNVQ4F6vVLd_8jiPNteziX6JwopDPl1CAYPMlqLwSwk"
+      }
+    ],
+    "sigs": [
+      "FMxkHHsI5n_fLPg_H9pP_ULFs0OWPLZhidBMZYGYwYD0JruUye2eQ3FjbEtIxyBwA9c8CkkBGiVSaCoQJepXCQ",
+      "WkF30kxg36p4pirvhzxCDZQ_3q-vCzcQ2emf1sNTexQ-v3pziJfY_4-32sjEK1locAsw5FuATWtGhYsg3WYXCg"
+    ],
+    "rootPub": "9yZZ1Axmh3cYzTbiRi1eV9buX7n-AwSos7SNQStzU4Q"
+  },
+  "proof": {
+    "ts": 1781076150226,
+    "sig": "kU-ZINOs68FwLeJnGwSlfRUwHNc_pwrlkgJSN1HXI6vbifY-zU6NqW13fzIG0nScoqXagVaW5YE8WUpqaDwEAw"
+  }
+}

@@ -31,6 +31,7 @@
   "files": [
     "dist",
     "schemas",
+    "vectors",
     "llms.txt",
     "QUICKSTART.md",
     "CHANGELOG.md"

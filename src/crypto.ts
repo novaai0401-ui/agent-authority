@@ -45,17 +45,29 @@ export function newKeyPair(): KeyPair {
 }
 
 /**
- * Canonical, deterministic bytes for a block (what gets signed/verified).
- *
- * INVARIANT: this relies on a fixed key order — `caveats` before `nextPub`, and
- * within each caveat the discriminant `t` before its payload — produced
- * identically by both the TypeScript and Python ports (see their respective
- * caveat constructors). Any third-party verifier MUST reproduce this exact byte
- * layout. If you ever add fields, append them in a fixed position in BOTH ports
- * (or switch to sorted-key canonical JSON in both at once).
+ * Deterministic canonical JSON: object keys sorted recursively, no insignificant
+ * whitespace. Produces byte-identical output to Python's
+ * `json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`,
+ * so the two reference ports — and any third-party verifier following this rule —
+ * compute the same signed bytes regardless of object construction order.
  */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  return (
+    "{" +
+    Object.keys(obj)
+      .sort()
+      .map((k) => JSON.stringify(k) + ":" + canonicalJson(obj[k]))
+      .join(",") +
+    "}"
+  );
+}
+
+/** Canonical bytes for a block (what gets signed/verified) — see canonicalJson. */
 export function canonicalBlock(block: Block): string {
-  return JSON.stringify({ caveats: block.caveats, nextPub: block.nextPub });
+  return canonicalJson({ caveats: block.caveats, nextPub: block.nextPub });
 }
 
 export function signBlock(privateKey: KeyObject, block: Block): string {

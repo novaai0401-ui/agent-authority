@@ -43,8 +43,10 @@ def new_key_pair() -> KeyPair:
 
 
 def canonical_block(block: Block) -> bytes:
+    # Sorted-key canonical JSON — byte-identical to the TS port's canonicalJson.
     return json.dumps(
         {"caveats": block["caveats"], "nextPub": block["nextPub"]},
+        sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
