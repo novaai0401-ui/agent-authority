@@ -16,8 +16,10 @@ from .crypto import (
     new_key_pair,
     public_of,
     sign_block,
+    sign_message,
     sign_proof,
     verify_block,
+    verify_message,
     verify_proof,
 )
 from .errors import AuthorizationError, BehalfError, IntegrityError, WideningError
@@ -284,6 +286,70 @@ class Behalf:
 
     def verify_audit_log(self) -> dict:
         return audit_mod.verify(self._audit.all())
+
+    def checkpoint_audit(self) -> dict:
+        """Sign an anchor over the audit head (store it out of the writer's
+        reach); verify_audit_checkpoint later detects tail-deletion/rewrites."""
+        entries = self._audit.all()
+        head = entries[-1] if entries else None
+        body = {
+            "seq": head["seq"] if head else -1,
+            "hash": head["hash"] if head else audit_mod.GENESIS,
+            "ts": self._now(),
+        }
+        msg = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return {**body, "signer": self.public_key, "sig": sign_message(self._keys.private, msg)}
+
+    def verify_audit_checkpoint(self, checkpoint: dict) -> dict:
+        if checkpoint["signer"] not in self._trusted:
+            return {"ok": False, "reason": "checkpoint signer is not trusted"}
+        body = {"seq": checkpoint["seq"], "hash": checkpoint["hash"], "ts": checkpoint["ts"]}
+        msg = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if not verify_message(checkpoint["signer"], msg, checkpoint["sig"]):
+            return {"ok": False, "reason": "invalid checkpoint signature"}
+        entries = self._audit.all()
+        chain = audit_mod.verify(entries)
+        if not chain["ok"]:
+            return {"ok": False, "reason": f"hash chain broken at seq {chain['brokenAt']}"}
+        if checkpoint["seq"] == -1:
+            return {"ok": True}
+        anchored = next((e for e in entries if e["seq"] == checkpoint["seq"]), None)
+        if anchored is None or anchored["hash"] != checkpoint["hash"]:
+            return {"ok": False, "reason": "anchored entry missing or rewritten (tail deletion / rewrite)"}
+        return {"ok": True}
+
+    # ---- Issuer key rotation (B5) ----
+
+    def rotate(self) -> "Behalf":
+        """Rotate the issuer key with overlap: a NEW engine, fresh keypair,
+        same stores/config, trusting all previously trusted keys (incl. the old
+        one). End the overlap later with untrust_key(old_public_key)."""
+        return Behalf(
+            root_key_pair=new_key_pair(),
+            trust=list(self._trusted),
+            revocations=self._revocations,
+            audit=self._audit,
+            rate=self._rate,
+            proof_skew_ms=self._proof_skew_ms,
+            require_nonce=self._require_nonce,
+            now=self._now,
+        )
+
+    @property
+    def trusted_keys(self) -> list[str]:
+        return list(self._trusted)
+
+    def trust_key(self, public_key: str) -> None:
+        self._trusted.add(public_key)
+
+    def untrust_key(self, public_key: str) -> bool:
+        if public_key == self.public_key:
+            raise BehalfError("cannot untrust this engine's own key")
+        try:
+            self._trusted.remove(public_key)
+            return True
+        except KeyError:
+            return False
 
     def import_(self, serialized: str) -> Mandate:
         """Accepts both ``serialize()`` (public token: inspect/verify only) and

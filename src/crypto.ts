@@ -170,6 +170,19 @@ export function verifyProof(
   }
 }
 
+/** Sign / verify an arbitrary canonical message (used for audit checkpoints). */
+export function signMessage(privateKey: KeyObject, message: string): string {
+  return edSign(null, Buffer.from(message, "utf8"), privateKey).toString("base64url");
+}
+
+export function verifyMessage(publicKey: KeyObject, message: string, sig: string): boolean {
+  try {
+    return edVerify(null, Buffer.from(message, "utf8"), publicKey, Buffer.from(sig, "base64url"));
+  } catch {
+    return false;
+  }
+}
+
 export function sha256Hex(data: string): string {
   return createHash("sha256").update(data, "utf8").digest("hex");
 }

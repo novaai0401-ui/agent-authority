@@ -148,6 +148,29 @@ There are two serializations, and the difference matters:
   another process: after `import` it has full holder powers. **Treat it as a
   secret** and deliver it only over a secure channel.
 
+### Issuer key rotation (with overlap)
+
+```ts
+const v2 = v1.rotate();          // fresh key, same stores, still trusts v1
+// 1) distribute v2.publicKey to verifiers (verifier.trustKey(v2.publicKey))
+// 2) new grants are signed by v2; old mandates keep verifying
+// 3) after the longest outstanding mandate expires:
+v2.untrustKey(v1.publicKey);     // end the overlap — old-key mandates retire
+```
+
+### Audit checkpoints (anchoring)
+
+The audit log is an unkeyed hash chain — verifiable, but a writer with store
+access could rewrite it and tail-deletion is invisible. `checkpointAudit()`
+signs the current head; store the checkpoint **out of the writer's reach** and
+`verifyAuditCheckpoint(cp)` later detects tail-deletion and rewrites:
+
+```ts
+const cp = await engine.checkpointAudit();   // ship to object storage / a ledger
+// later, e.g. nightly:
+const { ok, reason } = await engine.verifyAuditCheckpoint(cp);
+```
+
 ## What maps to the standard underneath
 
 | Behalf concept                  | Standard it tracks                              |
@@ -167,7 +190,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 100 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 105 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -321,7 +344,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 81 tests, zero dependencies
+python3 -m unittest discover -s tests   # 85 tests, zero dependencies
 ```
 
 ```python
@@ -391,10 +414,11 @@ Honest about what this reference implementation does *not* yet do:
 - **Rate windows are sliding-count, not token-bucket**, and rejected attempts
   are not counted — adequate for caps, not for burst shaping.
 - **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
-  naive single-record tampering, and is verifiable without trusting storage — but
-  an adversary with full write access can recompute the chain, and tail deletion
-  isn't detectable. For stronger guarantees, sign entries/checkpoints, anchor the
-  head hash externally, or use append-only/WORM storage.
+  naive single-record tampering — but a writer with full store access can
+  recompute the chain, and tail deletion alone isn't detectable. Mitigation
+  shipped: `checkpointAudit()` signs the head; store checkpoints out of the
+  writer's reach and `verifyAuditCheckpoint()` detects deletion/rewrites.
+  WORM/append-only storage remains the strongest option.
 - **`agent` binding is advisory, not cryptographic.** The `agent` caveat is a
   string label; nothing yet ties a mandate to a specific agent *identity* (a
   SPIFFE/SVID-style key binding is roadmap). Treat it as documentation, not an

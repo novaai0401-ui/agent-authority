@@ -406,3 +406,7 @@ def create_control_plane(
         consent_ttl_ms=consent_ttl_ms,
         token=token,
     )
+
+
+if __name__ == "__main__":
+    main()

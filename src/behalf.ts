@@ -8,6 +8,9 @@ import {
   importPrivateKey,
   signProof,
   verifyProof,
+  signMessage,
+  verifyMessage,
+  canonicalJson,
   type KeyPair,
 } from "./crypto.js";
 import {
@@ -17,7 +20,7 @@ import {
   windowMs,
   type Capability,
 } from "./capability.js";
-import { verify as verifyAudit } from "./audit.js";
+import { verify as verifyAudit, GENESIS } from "./audit.js";
 import {
   MemoryAuditStore,
   MemoryRevocationStore,
@@ -30,6 +33,7 @@ import { Mandate, type Engine } from "./mandate.js";
 import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
 import type {
   AttenuateOptions,
+  AuditCheckpoint,
   AuditEntry,
   AuditIntegrity,
   Block,
@@ -353,6 +357,88 @@ export class Behalf implements Engine {
   /** Verify the integrity of the entire audit log. */
   async verifyAuditLog(): Promise<AuditIntegrity> {
     return verifyAudit(await this.auditStore.all());
+  }
+
+  /**
+   * Sign an anchor over the audit log's current head (C4). Store checkpoints
+   * somewhere the log's writer can't reach (another host, object storage, a
+   * ledger): a later `verifyAuditCheckpoint` then detects tail-deletion and
+   * full-chain rewrites, which the unkeyed hash chain alone cannot.
+   */
+  async checkpointAudit(): Promise<AuditCheckpoint> {
+    const entries = await this.auditStore.all();
+    const head = entries[entries.length - 1];
+    const body = { seq: head?.seq ?? -1, hash: head?.hash ?? GENESIS, ts: this.now() };
+    return {
+      ...body,
+      signer: this.publicKey,
+      sig: signMessage(this.rootKeyPair.privateKey, canonicalJson(body)),
+    };
+  }
+
+  /**
+   * Verify the log against a previously-taken checkpoint: the checkpoint's
+   * signature must verify under a trusted key, the chain must replay, and the
+   * entry at `checkpoint.seq` must still carry exactly the anchored hash.
+   */
+  async verifyAuditCheckpoint(checkpoint: AuditCheckpoint): Promise<AuditIntegrity & { reason?: string }> {
+    if (!this.trusted.has(checkpoint.signer)) {
+      return { ok: false, reason: "checkpoint signer is not trusted" };
+    }
+    const body = { seq: checkpoint.seq, hash: checkpoint.hash, ts: checkpoint.ts };
+    if (!verifyMessage(importPublicKey(checkpoint.signer), canonicalJson(body), checkpoint.sig)) {
+      return { ok: false, reason: "invalid checkpoint signature" };
+    }
+    const entries = await this.auditStore.all();
+    const chain = verifyAudit(entries);
+    if (!chain.ok) return { ...chain, reason: `hash chain broken at seq ${chain.brokenAt}` };
+    if (checkpoint.seq === -1) return { ok: true };
+    const anchored = entries.find((e) => e.seq === checkpoint.seq);
+    if (!anchored || anchored.hash !== checkpoint.hash) {
+      return { ok: false, reason: "anchored entry missing or rewritten (tail deletion / rewrite)" };
+    }
+    return { ok: true };
+  }
+
+  // ---- Issuer key rotation (B5) ----
+
+  /**
+   * Rotate the issuer key with overlap: returns a NEW engine with a fresh
+   * keypair that shares this engine's stores/config and still trusts every
+   * previously trusted key (including the old one), so existing mandates keep
+   * verifying while new grants are signed by the new key. Distribute the new
+   * `publicKey` to verifiers, wait out the longest outstanding mandate expiry,
+   * then end the overlap with `untrustKey(oldPublicKey)`.
+   */
+  rotate(): Behalf {
+    return new Behalf({
+      rootKeyPair: newKeyPair(),
+      trust: [...this.trusted],
+      revocations: this.revocations,
+      audit: this.auditStore,
+      rate: this.rateStore,
+      proofSkewMs: this.proofSkewMs,
+      requireNonce: this.requireNonce,
+      now: this.now,
+    });
+  }
+
+  /** Currently trusted issuer public keys (own key included). */
+  get trustedKeys(): string[] {
+    return [...this.trusted];
+  }
+
+  /** Trust an additional issuer key (e.g. a peer's, or a pre-staged next key). */
+  trustKey(publicKey: string): void {
+    this.trusted.add(publicKey);
+  }
+
+  /** End a rotation overlap. Refuses to remove this engine's own key. */
+  untrustKey(publicKey: string): boolean {
+    if (publicKey === this.publicKey) {
+      throw new BehalfError("cannot untrust this engine's own key");
+    }
+    return this.trusted.delete(publicKey);
   }
 
   /**

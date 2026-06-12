@@ -40,6 +40,18 @@ to [Semantic Versioning](https://semver.org/).
   mandate (token + key) across process boundaries; MCP `request_mandate` and
   the CLI now issue usable credentials (post-PoP regression fixes).
 
+### Security (hardening, continued)
+
+- **Issuer key rotation (B5).** `engine.rotate()` returns a fresh-keyed engine
+  sharing stores and trusting the old key for an overlap window; end it with
+  `untrustKey(oldKey)`. `trustKey`/`trustedKeys` manage the trust set.
+- **Signed audit checkpoints (C4).** `checkpointAudit()` /
+  `verifyAuditCheckpoint()` anchor the log head under the issuer key, making
+  tail-deletion and rewrites detectable when checkpoints are stored out of the
+  writer's reach.
+- Fixed: `python -m behalf.control_plane` exited immediately (missing
+  `__main__` guard); the console script was unaffected.
+
 ### Added
 
 - **Core (TypeScript + Python).** The five-verb Mandate API — `grant`,

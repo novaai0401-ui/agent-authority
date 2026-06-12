@@ -35,13 +35,16 @@ Guarantees, with the mechanism and the test that pins each one:
 | Cross-implementation drift is impossible | sorted-key canonical JSON; shared committed vector verified by both ports | `vectors/mandate-vector.json`, `test/vector.test.ts`, `python/tests/test_vector.py` |
 | Revocation cascades to descendants | every chain id checked at authorize | `test/revocation.test.ts` |
 | Tenant isolation on a shared control plane | per-tenant bearer tokens namespace audit/policy/revocation/rate/consent | `test/control-plane.test.ts`, `test/hardening.test.ts` |
+| Issuer key rotation with overlap | `rotate()` / `trustKey` / `untrustKey` | `test/rotation.test.ts` |
+| Audit tail-deletion/rewrite detection | signed head checkpoints | `test/rotation.test.ts`, `python/tests/test_rotation.py` |
 
 ## Explicit non-goals / accepted limitations
 
-- **Audit log is integrity-chained, not adversary-proof.** An attacker with
-  write access to the store can recompute the chain; tail deletion is
-  undetectable. Mitigations (signing checkpoints, external anchoring, WORM
-  storage) are deliberately left to deployments.
+- **Audit log is integrity-chained, not adversary-proof by itself.** An
+  attacker with write access can recompute the chain. Signed checkpoints
+  (`checkpointAudit` / `verifyAuditCheckpoint`) detect tail-deletion and
+  rewrites **provided checkpoints are stored out of the writer's reach**;
+  WORM/append-only storage remains the strongest deployment option.
 - **`agent` caveat is an advisory label**, not a cryptographic identity binding
   (SPIFFE/SVID-style binding is roadmap).
 - **Holder credentials (`serializeWithKey`) are secrets** — Behalf assumes a

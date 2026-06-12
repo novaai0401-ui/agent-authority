@@ -91,6 +91,20 @@ def verify_proof(
         return False
 
 
+def sign_message(private_b64: str, message: str) -> str:
+    """Sign an arbitrary canonical message (used for audit checkpoints)."""
+    seed = _unb64(private_b64)
+    pk = _ed25519.publickey(seed)
+    return _b64(_ed25519.signature(message.encode("utf-8"), seed, pk))
+
+
+def verify_message(public_b64: str, message: str, sig_b64: str) -> bool:
+    try:
+        return _ed25519.checkvalid(_unb64(sig_b64), message.encode("utf-8"), _unb64(public_b64))
+    except Exception:
+        return False
+
+
 def sha256_hex(data: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
