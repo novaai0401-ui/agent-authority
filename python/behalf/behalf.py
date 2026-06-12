@@ -260,9 +260,14 @@ class Behalf:
         return audit_mod.verify(self._audit.all())
 
     def import_(self, serialized: str) -> Mandate:
+        """Accepts both ``serialize()`` (public token: inspect/verify only) and
+        ``serialize_with_key()`` (full holder credential)."""
         pad = "=" * (-len(serialized) % 4)
         raw = base64.urlsafe_b64decode(serialized + pad)
-        return Mandate(json.loads(raw), self)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "token" in parsed and "key" in parsed:
+            return Mandate(parsed["token"], self, parsed["key"])
+        return Mandate(parsed, self)
 
     def verify_signature(self, token: dict) -> None:
         if token.get("v") != 2:

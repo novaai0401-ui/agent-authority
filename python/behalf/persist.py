@@ -129,3 +129,31 @@ class FilePolicyStore:
 
     def has(self, name: str) -> bool:
         return name in self._policies
+
+
+class FileRateStore:
+    """Rate-limit windows persisted as a JSON object of key -> hit timestamps."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        _ensure_dir(path)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self._hits = json.load(f)
+        else:
+            self._hits: dict = {}
+
+    def _flush(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self._hits, f)
+
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        recent = [t for t in self._hits.get(key, []) if now - t < window_ms]
+        if len(recent) + 1 > limit:
+            self._hits[key] = recent
+            self._flush()
+            return False
+        recent.append(now)
+        self._hits[key] = recent
+        self._flush()
+        return True

@@ -58,6 +58,7 @@ export {
   FileAuditStore,
   FileConsentStore,
   FilePolicyStore,
+  FileRateStore,
 } from "./persist.js";
 export {
   createControlPlane,

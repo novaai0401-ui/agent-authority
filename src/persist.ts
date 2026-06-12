@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } fr
 import { dirname } from "node:path";
 import { seal } from "./audit.js";
 import type { AuditEntry, AuditFields, ConsentRecord } from "./types.js";
-import type { AuditStore, ConsentStore, PolicyStore, RevocationStore } from "./store.js";
+import type { AuditStore, ConsentStore, PolicyStore, RateStore, RevocationStore } from "./store.js";
 
 /**
  * Local-first, file-backed stores. These keep revocation and audit state across
@@ -131,5 +131,34 @@ export class FilePolicyStore implements PolicyStore {
   }
   has(name: string): boolean {
     return this.policies.has(name);
+  }
+}
+
+/** Rate-limit windows persisted as a JSON object of key → hit timestamps. */
+export class FileRateStore implements RateStore {
+  private readonly hits: Map<string, number[]>;
+
+  constructor(private readonly path: string) {
+    ensureDir(path);
+    this.hits = existsSync(path)
+      ? new Map(Object.entries(JSON.parse(readFileSync(path, "utf8")) as Record<string, number[]>))
+      : new Map();
+  }
+
+  private flush(): void {
+    writeFileSync(this.path, JSON.stringify(Object.fromEntries(this.hits)), "utf8");
+  }
+
+  hit(key: string, windowMs: number, limit: number, now: number): boolean {
+    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length + 1 > limit) {
+      this.hits.set(key, recent);
+      this.flush();
+      return false;
+    }
+    recent.push(now);
+    this.hits.set(key, recent);
+    this.flush();
+    return true;
   }
 }

@@ -37,7 +37,9 @@ async function main() {
     can: ["read:calendar"],
     expiresIn: "1h",
   });
-  const wire = mandate.serialize();
+  // Hand the worker a HOLDER credential (token + delegation key) so it can
+  // actually authorize in its own process. Secret — deliver over a secure channel.
+  const wire = mandate.serializeWithKey();
 
   await show(worker, wire, "before revoke");
   console.log("\nissuer revokes via the control plane...\n");

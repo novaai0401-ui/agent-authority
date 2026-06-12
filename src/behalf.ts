@@ -5,6 +5,7 @@ import {
   verifyBlock,
   exportPublicKey,
   importPublicKey,
+  importPrivateKey,
   signProof,
   verifyProof,
   type KeyPair,
@@ -311,12 +312,24 @@ export class Behalf implements Engine {
     return verifyAudit(await this.auditStore.all());
   }
 
-  /** Re-hydrate a Mandate from a serialized string (verify/authorize only). */
+  /**
+   * Re-hydrate a Mandate from a serialized string. Accepts both forms:
+   * - `serialize()` (public token) → inspect/verify only; cannot authorize,
+   *   prove, or attenuate (no delegation key).
+   * - `serializeWithKey()` (token + delegation key) → a full holder credential
+   *   that can authorize, prove, and attenuate.
+   */
   import(serialized: string): Mandate {
-    const token = JSON.parse(
-      Buffer.from(serialized, "base64url").toString("utf8"),
-    ) as MandateToken;
-    return new Mandate(token, this);
+    const parsed = JSON.parse(Buffer.from(serialized, "base64url").toString("utf8")) as
+      | MandateToken
+      | { token: MandateToken; key: string };
+    if ("token" in parsed && "key" in parsed) {
+      const token = parsed.token;
+      // The delegation key's public half is the chain's terminal nextPub.
+      const pub = token.blocks[token.blocks.length - 1].nextPub;
+      return new Mandate(token, this, importPrivateKey(parsed.key, pub));
+    }
+    return new Mandate(parsed as MandateToken, this);
   }
 
   /**

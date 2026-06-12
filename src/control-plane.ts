@@ -351,7 +351,7 @@ if (runningAsMain()) {
   void (async () => {
     const { join } = await import("node:path");
     const { homedir } = await import("node:os");
-    const { FileRevocationStore, FileAuditStore, FileConsentStore, FilePolicyStore } =
+    const { FileRevocationStore, FileAuditStore, FileConsentStore, FilePolicyStore, FileRateStore } =
       await import("./persist.js");
     const home = process.env.BEHALF_HOME ?? join(homedir(), ".behalf");
     const port = Number(process.env.PORT ?? 8787);
@@ -360,6 +360,7 @@ if (runningAsMain()) {
       audit: new FileAuditStore(join(home, "audit.jsonl")),
       consents: new FileConsentStore(join(home, "consents.json")),
       policies: new FilePolicyStore(join(home, "policies.json")),
+      rate: new FileRateStore(join(home, "rate.json")),
       token: process.env.BEHALF_TOKEN,
     });
     const bound = await cp.listen(port);

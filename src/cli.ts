@@ -190,7 +190,16 @@ async function main(): Promise<number> {
         process.stderr.write(`[lint:${f.level}] ${f.capability}: ${f.message}\n`);
       }
       const m = engine.grant({ principal, agent, can, expiresIn });
-      console.log(m.serialize());
+      if (args.public !== undefined) {
+        // Presentation-only token (cannot authorize — no delegation key).
+        console.log(m.serialize());
+      } else {
+        process.stderr.write(
+          "note: output is a HOLDER credential (includes the delegation key) — treat it as a secret.\n" +
+            "      Use --public for the presentation-only token.\n",
+        );
+        console.log(m.serializeWithKey());
+      }
       return 0;
     }
     case "inspect": {
@@ -228,10 +237,21 @@ async function main(): Promise<number> {
         console.error("authorize requires <mandate> <action>");
         return 2;
       }
-      // The CLI only has the public token (not the holder's key), so this is an
-      // advisory scope check — it does not prove possession. Real enforcement
-      // (with proof of possession) happens in-process or over behalf/a2a.
-      const result = await engine.inspect(engine.import(mandate).token, action);
+      const m = engine.import(mandate);
+      if (m.canDelegate) {
+        // Holder credential: full authorize with proof of possession.
+        try {
+          await m.authorize(action);
+          console.log(`ALLOW  ${action}`);
+          return 0;
+        } catch (e) {
+          const reason = e instanceof AuthorizationError ? e.reason : String(e);
+          console.log(`DENY   ${action}  (${reason})`);
+          return 1;
+        }
+      }
+      // Public token only: advisory scope check (possession not proven).
+      const result = await engine.inspect(m.token, action);
       if (result.allowed) {
         console.log(`ALLOW  ${action}  (advisory; possession not checked)`);
         return 0;

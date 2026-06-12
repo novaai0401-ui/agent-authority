@@ -122,17 +122,25 @@ dropping its own block.
 // In-process holder: mandate.authorize() mints + checks the proof for you.
 await mandate.authorize("spend:usd=20");
 
-// Across a trust boundary, the holder presents the token + a fresh proof;
-// the verifier needs only the issuer's PUBLIC key (no shared secret):
+// Across a trust boundary, the holder presents the token + a fresh,
+// action-bound proof; the verifier needs only the issuer's PUBLIC key:
 const verifier = createBehalf({ trust: [issuer.publicKey] });
-await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove());
+await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove("spend:usd=20"));
 ```
 
 For an advisory "would this token's scope allow X?" check that does **not** prove
-possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. A
-mandate restored via `import` can be inspected and verified, but to authorize or
-delegate it you must hold its key. Over HTTP, `behalf/a2a`'s `present()` attaches
-the proof automatically.
+possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. Over
+HTTP, `behalf/a2a`'s `present()` attaches the proof automatically.
+
+There are two serializations, and the difference matters:
+
+- **`mandate.serialize()`** — the public token. Safe to show anyone; after
+  `import` it can be inspected and verified, but **not** authorized, proved, or
+  delegated (it carries no key).
+- **`mandate.serializeWithKey()`** — the holder credential (token **+**
+  delegation key). This is how you hand a delegated mandate to a sub-agent in
+  another process: after `import` it has full holder powers. **Treat it as a
+  secret** and deliver it only over a secure channel.
 
 ## What maps to the standard underneath
 
@@ -175,8 +183,10 @@ After `npm run build`, the `behalf` CLI manages mandates from the terminal
 node dist/cli.js pubkey
 M=$(node dist/cli.js grant --principal alice --agent research \
       --can "read:calendar" --can "spend:usd<=50" --expires 1h)
+# $M is a HOLDER credential (includes the delegation key — keep it secret).
+# Add --public to emit the presentation-only token instead.
 node dist/cli.js inspect "$M"
-node dist/cli.js authorize "$M" "spend:usd=20"   # ALLOW
+node dist/cli.js authorize "$M" "spend:usd=20"   # ALLOW (real check, proof of possession)
 node dist/cli.js authorize "$M" "spend:usd=99"   # DENY
 node dist/cli.js revoke <mandate-id>
 node dist/cli.js audit  <mandate-id>

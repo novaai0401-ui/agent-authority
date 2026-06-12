@@ -1,4 +1,5 @@
 import type { AttenuateOptions, AuditEntry, Caveat, MandateToken, Proof } from "./types.js";
+import { exportPrivateKey } from "./crypto.js";
 import type { KeyObject } from "node:crypto";
 
 /**
@@ -127,5 +128,22 @@ export class Mandate {
   /** Compact, transmittable string form (base64url JSON of the public token). */
   serialize(): string {
     return Buffer.from(JSON.stringify(this.token), "utf8").toString("base64url");
+  }
+
+  /**
+   * Transferable holder credential: the token PLUS its delegation key, so the
+   * recipient can authorize, prove, and attenuate after `engine.import(...)`.
+   * This is how a delegated mandate is handed to a sub-agent in another process.
+   *
+   * TREAT AS A SECRET: anyone holding this string can exercise the mandate's
+   * full authority until expiry/revocation. Deliver only over a secure channel.
+   * Use `serialize()` for the public, presentation-only form.
+   */
+  serializeWithKey(): string {
+    if (!this.delegationKey) {
+      throw new Error("cannot export with key: this mandate was imported without its key");
+    }
+    const payload = { token: this.token, key: exportPrivateKey(this.delegationKey) };
+    return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   }
 }

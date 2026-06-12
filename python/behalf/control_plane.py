@@ -305,7 +305,13 @@ def main() -> None:
     import os
     import time as _time
 
-    from .persist import FileAuditStore, FileConsentStore, FilePolicyStore, FileRevocationStore
+    from .persist import (
+        FileAuditStore,
+        FileConsentStore,
+        FilePolicyStore,
+        FileRateStore,
+        FileRevocationStore,
+    )
 
     home = os.environ.get("BEHALF_HOME") or os.path.join(os.path.expanduser("~"), ".behalf")
     os.makedirs(home, exist_ok=True)
@@ -315,6 +321,7 @@ def main() -> None:
         audit=FileAuditStore(os.path.join(home, "audit.jsonl")),
         consents=FileConsentStore(os.path.join(home, "consents.json")),
         policies=FilePolicyStore(os.path.join(home, "policies.json")),
+        rate=FileRateStore(os.path.join(home, "rate.json")),
         token=os.environ.get("BEHALF_TOKEN"),
     )
     bound = cp.listen(port)

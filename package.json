@@ -78,7 +78,8 @@
     "example:spend": "node dist-test/examples/spend-limited-agent.js",
     "example:delegation": "node dist-test/examples/two-agent-delegation.js",
     "example:a2a": "node dist-test/examples/a2a-delegation.js",
-    "example:control-plane": "node dist-test/examples/control-plane.js"
+    "example:control-plane": "node dist-test/examples/control-plane.js",
+    "examples": "tsc -p tsconfig.test.json && node scripts/run-examples.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -166,7 +166,15 @@ def main(argv=None) -> int:
         for f in lint(can):
             print(f"[lint:{f.level}] {f.capability}: {f.message}", file=sys.stderr)
         m = engine.grant(principal=principal, agent=agent, can=can, expires_in=expires)
-        print(m.serialize())
+        if "public" in args:
+            print(m.serialize())  # presentation-only token (cannot authorize)
+        else:
+            print(
+                "note: output is a HOLDER credential (includes the delegation key) — "
+                "treat it as a secret. Use --public for the presentation-only token.",
+                file=sys.stderr,
+            )
+            print(m.serialize_with_key())
         return 0
     if cmd == "inspect":
         if not args["_"]:
@@ -191,9 +199,18 @@ def main(argv=None) -> int:
             print("authorize requires <mandate> <action>", file=sys.stderr)
             return 2
         mandate, action = args["_"][0], args["_"][1]
-        # The CLI only has the public token (not the holder's key), so this is an
-        # advisory scope check — it does not prove possession.
-        result = engine.inspect(engine.import_(mandate).token, action)
+        m = engine.import_(mandate)
+        if m.can_delegate:
+            # Holder credential: full authorize with proof of possession.
+            try:
+                m.authorize(action)
+                print(f"ALLOW  {action}")
+                return 0
+            except AuthorizationError as e:
+                print(f"DENY   {action}  ({e.reason})")
+                return 1
+        # Public token only: advisory scope check (possession not proven).
+        result = engine.inspect(m.token, action)
         if result["allowed"]:
             print(f"ALLOW  {action}  (advisory; possession not checked)")
             return 0

@@ -103,3 +103,15 @@ class Mandate:
     def serialize(self) -> str:
         raw = json.dumps(self.token, separators=(",", ":")).encode("utf-8")
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    def serialize_with_key(self) -> str:
+        """Transferable HOLDER credential: token + delegation key, so the
+        recipient can authorize/prove/attenuate after ``import_``. TREAT AS A
+        SECRET — deliver only over a secure channel. Use ``serialize()`` for the
+        public, presentation-only form."""
+        if self._delegation_key is None:
+            raise Exception("cannot export with key: imported mandate has no key")
+        raw = json.dumps(
+            {"token": self.token, "key": self._delegation_key}, separators=(",", ":")
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
