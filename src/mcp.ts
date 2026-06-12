@@ -105,7 +105,9 @@ export function behalfMcpTools(engine: Behalf = Behalf.default): ToolDefinition[
     {
       name: "request_mandate",
       description:
-        "Request a scoped, time-bound mandate authorizing an agent to act on a principal's behalf.",
+        "Request a scoped, time-bound mandate authorizing an agent to act on a principal's behalf. " +
+        "Returns `mandate` (a HOLDER credential containing the delegation key — treat it as a secret) " +
+        "and `publicToken` (safe to share for inspection/presentation).",
       inputSchema: {
         type: "object",
         required: ["principal", "agent", "can", "expiresIn"],
@@ -123,7 +125,9 @@ export function behalfMcpTools(engine: Behalf = Behalf.default): ToolDefinition[
           can: args.can as string[],
           expiresIn: String(args.expiresIn),
         });
-        return { mandate: m.serialize(), id: m.id };
+        // The holder credential includes the delegation key — without it the
+        // requester could never authorize (proof of possession would fail).
+        return { mandate: m.serializeWithKey(), publicToken: m.serialize(), id: m.id };
       },
     },
     {

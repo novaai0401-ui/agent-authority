@@ -5,8 +5,12 @@ import {
   verifyBlock,
   exportPublicKey,
   importPublicKey,
+  importPrivateKey,
   signProof,
   verifyProof,
+  signMessage,
+  verifyMessage,
+  canonicalJson,
   type KeyPair,
 } from "./crypto.js";
 import {
@@ -16,7 +20,7 @@ import {
   windowMs,
   type Capability,
 } from "./capability.js";
-import { verify as verifyAudit } from "./audit.js";
+import { verify as verifyAudit, GENESIS } from "./audit.js";
 import {
   MemoryAuditStore,
   MemoryRevocationStore,
@@ -29,6 +33,7 @@ import { Mandate, type Engine } from "./mandate.js";
 import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
 import type {
   AttenuateOptions,
+  AuditCheckpoint,
   AuditEntry,
   AuditIntegrity,
   Block,
@@ -50,6 +55,12 @@ export interface BehalfConfig {
   rate?: RateStore;
   /** Max age (ms) of a possession proof accepted at authorize. Default 5 min. */
   proofSkewMs?: number;
+  /**
+   * Require a verifier-issued single-use nonce (see `challenge()`) on every
+   * possession proof — eliminates replay within the freshness window at the
+   * cost of a challenge round-trip. Default false.
+   */
+  requireNonce?: boolean;
   /** Override the clock — handy for tests. */
   now?: () => number;
 }
@@ -79,6 +90,9 @@ export class Behalf implements Engine {
   private readonly auditStore: AuditStore;
   private readonly rateStore: RateStore;
   private readonly proofSkewMs: number;
+  private readonly requireNonce: boolean;
+  /** Outstanding single-use challenges: nonce → expiry (ms). */
+  private readonly nonces = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(config: BehalfConfig = {}) {
@@ -89,7 +103,19 @@ export class Behalf implements Engine {
     this.auditStore = config.audit ?? new MemoryAuditStore();
     this.rateStore = config.rate ?? new MemoryRateStore();
     this.proofSkewMs = config.proofSkewMs ?? 300_000;
+    this.requireNonce = config.requireNonce ?? false;
     this.now = config.now ?? (() => Date.now());
+  }
+
+  /**
+   * Issue a single-use challenge nonce. The holder binds it into its possession
+   * proof (`prove(action, { nonce })`); `authorize` consumes it, so that proof
+   * can never be replayed — even within the freshness window.
+   */
+  challenge(): string {
+    const nonce = newId();
+    this.nonces.set(nonce, this.now() + this.proofSkewMs);
+    return nonce;
   }
 
   /** This engine's issuer public key (base64url SPKI). Share it with verifiers. */
@@ -168,9 +194,18 @@ export class Behalf implements Engine {
    * terminal key). Throws if the key is absent — you cannot act on a mandate you
    * only hold the public token for.
    */
-  provePossession(token: MandateToken, delegationKey: KeyObject): Proof {
+  provePossession(
+    token: MandateToken,
+    delegationKey: KeyObject,
+    action: string,
+    nonce?: string,
+  ): Proof {
     const ts = this.now();
-    return { ts, sig: signProof(delegationKey, token.id, token.sigs, ts) };
+    return {
+      ts,
+      sig: signProof(delegationKey, token.id, token.sigs, ts, action, nonce ?? ""),
+      ...(nonce !== undefined ? { nonce } : {}),
+    };
   }
 
   /** Holder path: `mandate.authorize()` routes here, minting a PoP from its key. */
@@ -180,7 +215,9 @@ export class Behalf implements Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void> {
     if (!delegationKey) throw new BehalfDelegationError();
-    return this.authorize(token, action, this.provePossession(token, delegationKey));
+    // In-process the engine is its own verifier, so it can self-issue a nonce.
+    const nonce = this.requireNonce ? this.challenge() : undefined;
+    return this.authorize(token, action, this.provePossession(token, delegationKey, action, nonce));
   }
 
   /**
@@ -215,8 +252,19 @@ export class Behalf implements Engine {
     // 2. Proof of possession of the chain's terminal key (anti-truncation).
     if (!proof) return deny("possession proof required");
     if (Math.abs(this.now() - proof.ts) > this.proofSkewMs) return deny("stale possession proof");
+    // 2b. Single-use nonce: consumed on first use, so a captured proof can
+    // never be replayed. Mandatory when the engine is configured requireNonce.
+    if (proof.nonce !== undefined) {
+      const expiry = this.nonces.get(proof.nonce);
+      if (expiry === undefined || this.now() > expiry) {
+        return deny("unknown or already-used nonce");
+      }
+      this.nonces.delete(proof.nonce);
+    } else if (this.requireNonce) {
+      return deny("nonce required (request one via challenge())");
+    }
     const terminal = importPublicKey(token.blocks[token.blocks.length - 1].nextPub);
-    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, proof.sig)) {
+    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, action, proof.sig, proof.nonce ?? "")) {
       return deny("invalid possession proof");
     }
 
@@ -301,7 +349,7 @@ export class Behalf implements Engine {
     await this.revocations.revoke(id);
   }
 
-  /** AUDIT — fetch the tamper-evident trail for a mandate's chain. */
+  /** AUDIT — fetch the hash-chained audit trail for a mandate's chain. */
   async audit(id: string): Promise<AuditEntry[]> {
     return this.auditStore.forMandate(id);
   }
@@ -311,12 +359,106 @@ export class Behalf implements Engine {
     return verifyAudit(await this.auditStore.all());
   }
 
-  /** Re-hydrate a Mandate from a serialized string (verify/authorize only). */
+  /**
+   * Sign an anchor over the audit log's current head (C4). Store checkpoints
+   * somewhere the log's writer can't reach (another host, object storage, a
+   * ledger): a later `verifyAuditCheckpoint` then detects tail-deletion and
+   * full-chain rewrites, which the unkeyed hash chain alone cannot.
+   */
+  async checkpointAudit(): Promise<AuditCheckpoint> {
+    const entries = await this.auditStore.all();
+    const head = entries[entries.length - 1];
+    const body = { seq: head?.seq ?? -1, hash: head?.hash ?? GENESIS, ts: this.now() };
+    return {
+      ...body,
+      signer: this.publicKey,
+      sig: signMessage(this.rootKeyPair.privateKey, canonicalJson(body)),
+    };
+  }
+
+  /**
+   * Verify the log against a previously-taken checkpoint: the checkpoint's
+   * signature must verify under a trusted key, the chain must replay, and the
+   * entry at `checkpoint.seq` must still carry exactly the anchored hash.
+   */
+  async verifyAuditCheckpoint(checkpoint: AuditCheckpoint): Promise<AuditIntegrity & { reason?: string }> {
+    if (!this.trusted.has(checkpoint.signer)) {
+      return { ok: false, reason: "checkpoint signer is not trusted" };
+    }
+    const body = { seq: checkpoint.seq, hash: checkpoint.hash, ts: checkpoint.ts };
+    if (!verifyMessage(importPublicKey(checkpoint.signer), canonicalJson(body), checkpoint.sig)) {
+      return { ok: false, reason: "invalid checkpoint signature" };
+    }
+    const entries = await this.auditStore.all();
+    const chain = verifyAudit(entries);
+    if (!chain.ok) return { ...chain, reason: `hash chain broken at seq ${chain.brokenAt}` };
+    if (checkpoint.seq === -1) return { ok: true };
+    const anchored = entries.find((e) => e.seq === checkpoint.seq);
+    if (!anchored || anchored.hash !== checkpoint.hash) {
+      return { ok: false, reason: "anchored entry missing or rewritten (tail deletion / rewrite)" };
+    }
+    return { ok: true };
+  }
+
+  // ---- Issuer key rotation (B5) ----
+
+  /**
+   * Rotate the issuer key with overlap: returns a NEW engine with a fresh
+   * keypair that shares this engine's stores/config and still trusts every
+   * previously trusted key (including the old one), so existing mandates keep
+   * verifying while new grants are signed by the new key. Distribute the new
+   * `publicKey` to verifiers, wait out the longest outstanding mandate expiry,
+   * then end the overlap with `untrustKey(oldPublicKey)`.
+   */
+  rotate(): Behalf {
+    return new Behalf({
+      rootKeyPair: newKeyPair(),
+      trust: [...this.trusted],
+      revocations: this.revocations,
+      audit: this.auditStore,
+      rate: this.rateStore,
+      proofSkewMs: this.proofSkewMs,
+      requireNonce: this.requireNonce,
+      now: this.now,
+    });
+  }
+
+  /** Currently trusted issuer public keys (own key included). */
+  get trustedKeys(): string[] {
+    return [...this.trusted];
+  }
+
+  /** Trust an additional issuer key (e.g. a peer's, or a pre-staged next key). */
+  trustKey(publicKey: string): void {
+    this.trusted.add(publicKey);
+  }
+
+  /** End a rotation overlap. Refuses to remove this engine's own key. */
+  untrustKey(publicKey: string): boolean {
+    if (publicKey === this.publicKey) {
+      throw new BehalfError("cannot untrust this engine's own key");
+    }
+    return this.trusted.delete(publicKey);
+  }
+
+  /**
+   * Re-hydrate a Mandate from a serialized string. Accepts both forms:
+   * - `serialize()` (public token) → inspect/verify only; cannot authorize,
+   *   prove, or attenuate (no delegation key).
+   * - `serializeWithKey()` (token + delegation key) → a full holder credential
+   *   that can authorize, prove, and attenuate.
+   */
   import(serialized: string): Mandate {
-    const token = JSON.parse(
-      Buffer.from(serialized, "base64url").toString("utf8"),
-    ) as MandateToken;
-    return new Mandate(token, this);
+    const parsed = JSON.parse(Buffer.from(serialized, "base64url").toString("utf8")) as
+      | MandateToken
+      | { token: MandateToken; key: string };
+    if ("token" in parsed && "key" in parsed) {
+      const token = parsed.token;
+      // The delegation key's public half is the chain's terminal nextPub.
+      const pub = token.blocks[token.blocks.length - 1].nextPub;
+      return new Mandate(token, this, importPrivateKey(parsed.key, pub));
+    }
+    return new Mandate(parsed as MandateToken, this);
   }
 
   /**

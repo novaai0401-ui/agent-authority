@@ -55,6 +55,12 @@ export interface MandateToken {
 export interface Proof {
   ts: number;
   sig: string;
+  /**
+   * Optional verifier-issued single-use nonce (from `engine.challenge()`).
+   * When present it is bound into the signature and consumed on use, giving
+   * true anti-replay; without it, replay is bounded only by `proofSkewMs`.
+   */
+  nonce?: string;
 }
 
 /** Options for {@link Behalf.grant}. */
@@ -85,7 +91,7 @@ export type AuditFields = Pick<
   "mandateId" | "chain" | "action" | "decision" | "reason" | "issuer"
 >;
 
-/** A single tamper-evident audit record. */
+/** A single hash-chained audit record (integrity-chained; see README Limitations). */
 export interface AuditEntry {
   seq: number;
   ts: number;
@@ -110,13 +116,32 @@ export interface AuditIntegrity {
   brokenAt?: number;
 }
 
+/**
+ * A signed anchor over the audit log's head. Because the head hash commits to
+ * every prior entry, a stored checkpoint makes later tail-deletion or rewrites
+ * detectable — something the unkeyed hash chain alone cannot do.
+ */
+export interface AuditCheckpoint {
+  /** seq of the head entry at checkpoint time (-1 for an empty log). */
+  seq: number;
+  /** Head entry's hash (the genesis hash for an empty log). */
+  hash: string;
+  ts: number;
+  /** Public key (base64url) of the engine that signed this checkpoint. */
+  signer: string;
+  /** Ed25519 signature over the canonical {seq, hash, ts} message. */
+  sig: string;
+}
+
 /** A just-in-time consent request tracked by the control plane. */
 export interface ConsentRecord {
   id: string;
   agent: string;
   capability: string;
   context?: Record<string, unknown>;
-  status: "pending" | "approved" | "denied";
+  /** Tenant issuer this request belongs to (set when created with a tenant token). */
+  issuer?: string;
+  status: "pending" | "approved" | "denied" | "expired";
   createdAt: number;
   decidedAt?: number;
 }

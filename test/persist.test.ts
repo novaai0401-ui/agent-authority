@@ -24,7 +24,7 @@ test("revocation persists across engine instances", async () => {
     // A brand-new engine reading the same file sees the revocation.
     const b = createBehalf({ rootKeyPair: keyPair, revocations: new FileRevocationStore(revPath) });
     await assert.rejects(
-      () => b.authorize(m.token, "read:calendar", m.prove()),
+      () => b.authorize(m.token, "read:calendar", m.prove("read:calendar")),
       AuthorizationError,
     );
   } finally {

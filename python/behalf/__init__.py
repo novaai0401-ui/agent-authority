@@ -33,6 +33,7 @@ from .persist import (
     FileAuditStore,
     FileConsentStore,
     FilePolicyStore,
+    FileRateStore,
     FileRevocationStore,
 )
 from .control_plane import ControlPlane, create_control_plane
@@ -88,6 +89,7 @@ __all__ = [
     "FileAuditStore",
     "FileConsentStore",
     "FilePolicyStore",
+    "FileRateStore",
     "MemoryConsentStore",
     "MemoryPolicyStore",
     "CachingRevocationStore",

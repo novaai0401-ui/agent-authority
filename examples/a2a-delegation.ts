@@ -42,7 +42,7 @@ async function main() {
   });
 
   // 1) Forward the planner's mandate as-is: $40 is within its $50 cap → allowed.
-  const ok = await behalfFetch(url, planner, { method: "POST" });
+  const ok = await behalfFetch(url, planner, { method: "POST" }, { action: "spend:usd=40" });
   console.log("as-is  ->", ok.status, await ok.json());
 
   // 2) Attenuate to <=$20 before forwarding: the $40 charge now exceeds the
@@ -51,7 +51,7 @@ async function main() {
     url,
     planner,
     { method: "POST" },
-    { attenuate: { can: ["spend:usd<=20"], agent: "scoped-planner" } },
+    { action: "spend:usd=40", attenuate: { can: ["spend:usd<=20"], agent: "scoped-planner" } },
   );
   console.log("scoped ->", denied.status, await denied.json());
 

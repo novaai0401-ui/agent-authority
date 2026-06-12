@@ -36,31 +36,30 @@ async function allowed(verifier, token, action, proof) {
   }
 }
 
-// ---- A) Python issues (+ proof) -> TypeScript verifies the possession proof ----
+// ---- A) Python issues (+ action-bound proofs) -> TypeScript verifies ----
 {
-  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50"]));
+  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "-", "spend:usd=20,spend:usd=60"]));
   const verifier = createBehalf({ trust: [out.pubkey] });
   const token = verifier.import(out.mandate).token;
-  check("PY->TS  allows in-scope (spend:usd=20)", await allowed(verifier, token, "spend:usd=20", out.proof));
-  check("PY->TS  denies out-of-scope (spend:usd=60)", !(await allowed(verifier, token, "spend:usd=60", out.proof)));
+  check("PY->TS  allows in-scope (spend:usd=20)", await allowed(verifier, token, "spend:usd=20", out.proofs["spend:usd=20"]));
+  check("PY->TS  denies out-of-scope (spend:usd=60)", !(await allowed(verifier, token, "spend:usd=60", out.proofs["spend:usd=60"])));
 }
 
 // ---- A2) Python issues + attenuates -> TypeScript verifies the 2-block chain ----
 {
-  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "spend:usd<=20"]));
+  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "spend:usd<=20", "spend:usd=20,spend:usd=21"]));
   const verifier = createBehalf({ trust: [out.pubkey] });
   const token = verifier.import(out.mandate).token;
-  check("PY->TS  attenuated chain allows spend:usd=20", await allowed(verifier, token, "spend:usd=20", out.proof));
-  check("PY->TS  attenuated chain denies spend:usd=21", !(await allowed(verifier, token, "spend:usd=21", out.proof)));
+  check("PY->TS  attenuated chain allows spend:usd=20", await allowed(verifier, token, "spend:usd=20", out.proofs["spend:usd=20"]));
+  check("PY->TS  attenuated chain denies spend:usd=21", !(await allowed(verifier, token, "spend:usd=21", out.proofs["spend:usd=21"])));
 }
 
-// ---- B) TypeScript issues (+ proof) -> Python verifies ----
+// ---- B) TypeScript issues (+ action-bound proof) -> Python verifies ----
 {
   const issuer = createBehalf();
   const m = issuer.grant({ principal: "ts", agent: "issuer", can: ["spend:usd<=50"], expiresIn: "1h" });
-  const proof = JSON.stringify(m.prove());
-  const allow = py(["interop_verify.py", issuer.publicKey, m.serialize(), "spend:usd=20", proof]);
-  const deny = py(["interop_verify.py", issuer.publicKey, m.serialize(), "spend:usd=60", JSON.stringify(m.prove())]);
+  const allow = py(["interop_verify.py", issuer.publicKey, m.serialize(), "spend:usd=20", JSON.stringify(m.prove("spend:usd=20"))]);
+  const deny = py(["interop_verify.py", issuer.publicKey, m.serialize(), "spend:usd=60", JSON.stringify(m.prove("spend:usd=60"))]);
   check("TS->PY  allows in-scope (spend:usd=20)", allow === "ALLOW");
   check("TS->PY  denies out-of-scope (spend:usd=60)", deny.startsWith("DENY"));
 }
@@ -70,8 +69,8 @@ async function allowed(verifier, token, action, proof) {
   const issuer = createBehalf();
   const root = issuer.grant({ principal: "ts", agent: "issuer", can: ["spend:usd<=50"], expiresIn: "1h" });
   const child = root.attenuate({ can: ["spend:usd<=20"], agent: "ts-sub" });
-  const allow = py(["interop_verify.py", issuer.publicKey, child.serialize(), "spend:usd=20", JSON.stringify(child.prove())]);
-  const deny = py(["interop_verify.py", issuer.publicKey, child.serialize(), "spend:usd=21", JSON.stringify(child.prove())]);
+  const allow = py(["interop_verify.py", issuer.publicKey, child.serialize(), "spend:usd=20", JSON.stringify(child.prove("spend:usd=20"))]);
+  const deny = py(["interop_verify.py", issuer.publicKey, child.serialize(), "spend:usd=21", JSON.stringify(child.prove("spend:usd=21"))]);
   check("TS->PY  attenuated chain allows spend:usd=20", allow === "ALLOW");
   check("TS->PY  attenuated chain denies spend:usd=21", deny.startsWith("DENY"));
 }
@@ -100,12 +99,12 @@ async function allowed(verifier, token, action, proof) {
       setTimeout(() => reject(new Error("control plane start timeout")), 5000);
     });
 
-    const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50"]));
+    const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "-", "spend:usd=20"]));
     const verifier = createBehalf({ trust: [out.pubkey], revocations: new HttpRevocationStore(base) });
     const m = verifier.import(out.mandate);
-    check("control-plane: TS allows PY mandate before revoke", await allowed(verifier, m.token, "spend:usd=20", out.proof));
+    check("control-plane: TS allows PY mandate before revoke", await allowed(verifier, m.token, "spend:usd=20", out.proofs["spend:usd=20"]));
     py(["interop_revoke.py", base, m.id]); // Python revokes through the plane
-    check("control-plane: TS denies after PY revokes", !(await allowed(verifier, m.token, "spend:usd=20", out.proof)));
+    check("control-plane: TS denies after PY revokes", !(await allowed(verifier, m.token, "spend:usd=20", out.proofs["spend:usd=20"])));
   } finally {
     cp.kill();
     rmSync(home, { recursive: true, force: true });

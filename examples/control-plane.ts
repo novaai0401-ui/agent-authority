@@ -3,7 +3,7 @@
  *
  * Two independent agents point at one control plane. When the first revokes a
  * mandate, the second sees it immediately — the "revoke once, propagates
- * everywhere" model. The same plane retains a single tamper-evident audit log.
+ * everywhere" model. The same plane retains a single hash-chained audit log.
  *
  *   npm run build && node dist-test/examples/control-plane.js
  */
@@ -37,7 +37,9 @@ async function main() {
     can: ["read:calendar"],
     expiresIn: "1h",
   });
-  const wire = mandate.serialize();
+  // Hand the worker a HOLDER credential (token + delegation key) so it can
+  // actually authorize in its own process. Secret — deliver over a secure channel.
+  const wire = mandate.serializeWithKey();
 
   await show(worker, wire, "before revoke");
   console.log("\nissuer revokes via the control plane...\n");

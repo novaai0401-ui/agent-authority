@@ -45,17 +45,29 @@ export function newKeyPair(): KeyPair {
 }
 
 /**
- * Canonical, deterministic bytes for a block (what gets signed/verified).
- *
- * INVARIANT: this relies on a fixed key order — `caveats` before `nextPub`, and
- * within each caveat the discriminant `t` before its payload — produced
- * identically by both the TypeScript and Python ports (see their respective
- * caveat constructors). Any third-party verifier MUST reproduce this exact byte
- * layout. If you ever add fields, append them in a fixed position in BOTH ports
- * (or switch to sorted-key canonical JSON in both at once).
+ * Deterministic canonical JSON: object keys sorted recursively, no insignificant
+ * whitespace. Produces byte-identical output to Python's
+ * `json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`,
+ * so the two reference ports — and any third-party verifier following this rule —
+ * compute the same signed bytes regardless of object construction order.
  */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  return (
+    "{" +
+    Object.keys(obj)
+      .sort()
+      .map((k) => JSON.stringify(k) + ":" + canonicalJson(obj[k]))
+      .join(",") +
+    "}"
+  );
+}
+
+/** Canonical bytes for a block (what gets signed/verified) — see canonicalJson. */
 export function canonicalBlock(block: Block): string {
-  return JSON.stringify({ caveats: block.caveats, nextPub: block.nextPub });
+  return canonicalJson({ caveats: block.caveats, nextPub: block.nextPub });
 }
 
 export function signBlock(privateKey: KeyObject, block: Block): string {
@@ -105,19 +117,36 @@ export function importPrivateKey(d: string, x: string): KeyObject {
  * truncation and makes a serialized token NOT a usable bearer credential.
  *
  * The message binds the proof to the EXACT presented chain (id + every block
- * signature) and a timestamp, so it cannot be replayed for a different/truncated
- * token, and only within a short freshness window for the same one. Producing it
- * requires the private key matching `blocks[last].nextPub`, which only the
- * legitimate tail holder has.
+ * signature), the timestamp, AND the action, so it cannot be replayed for a
+ * different/truncated token or reused for a different action, and only within a
+ * short freshness window for the same (token, action). Producing it requires the
+ * private key matching `blocks[last].nextPub`, which only the legitimate tail
+ * holder has. (Over the wire, run under TLS; for single-use guarantees within
+ * the window, layer a verifier-issued nonce.)
  */
-export function proofMessage(id: string, sigs: string[], ts: number): string {
-  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}`;
+export function proofMessage(
+  id: string,
+  sigs: string[],
+  ts: number,
+  action: string,
+  nonce = "",
+): string {
+  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}\n${action}\n${nonce}`;
 }
 
-export function signProof(delegationKey: KeyObject, id: string, sigs: string[], ts: number): string {
-  return edSign(null, Buffer.from(proofMessage(id, sigs, ts), "utf8"), delegationKey).toString(
-    "base64url",
-  );
+export function signProof(
+  delegationKey: KeyObject,
+  id: string,
+  sigs: string[],
+  ts: number,
+  action: string,
+  nonce = "",
+): string {
+  return edSign(
+    null,
+    Buffer.from(proofMessage(id, sigs, ts, action, nonce), "utf8"),
+    delegationKey,
+  ).toString("base64url");
 }
 
 export function verifyProof(
@@ -125,15 +154,30 @@ export function verifyProof(
   id: string,
   sigs: string[],
   ts: number,
+  action: string,
   sig: string,
+  nonce = "",
 ): boolean {
   try {
     return edVerify(
       null,
-      Buffer.from(proofMessage(id, sigs, ts), "utf8"),
+      Buffer.from(proofMessage(id, sigs, ts, action, nonce), "utf8"),
       terminalPub,
       Buffer.from(sig, "base64url"),
     );
+  } catch {
+    return false;
+  }
+}
+
+/** Sign / verify an arbitrary canonical message (used for audit checkpoints). */
+export function signMessage(privateKey: KeyObject, message: string): string {
+  return edSign(null, Buffer.from(message, "utf8"), privateKey).toString("base64url");
+}
+
+export function verifyMessage(publicKey: KeyObject, message: string, sig: string): boolean {
+  try {
+    return edVerify(null, Buffer.from(message, "utf8"), publicKey, Buffer.from(sig, "base64url"));
   } catch {
     return false;
   }

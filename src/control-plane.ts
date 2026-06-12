@@ -55,6 +55,11 @@ export interface ControlPlaneOptions {
    * access). When either is set, every request must authenticate.
    */
   tenants?: Record<string, string>;
+  /**
+   * Pending consent requests older than this are marked "expired" (a terminal
+   * deny for the consent provider). Disabled when unset.
+   */
+  consentTtlMs?: number;
   /** Admin credential — full, unscoped access. */
   token?: string;
 }
@@ -114,19 +119,31 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     }
 
     // ---- Revocation ----
+    // Tenant revocations are namespaced under the tenant's issuer, so one
+    // tenant can never revoke (or unrevoke-by-collision) another tenant's
+    // mandate ids. Admin revocations are global and visible to all tenants.
+    const revKey = (id: string) => (callerIssuer ? `${callerIssuer} ${id}` : id);
     if (method === "POST" && path === "/v1/revoke") {
       const body = await readJson(req);
       if (!body?.id) return send(res, 400, { error: "id required" });
-      await revocations.revoke(String(body.id));
+      await revocations.revoke(revKey(String(body.id)));
       return send(res, 200, { ok: true });
     }
     if (method === "GET" && path === "/v1/revoked") {
-      return send(res, 200, { ids: listRevoked(revocations) });
+      const all = listRevoked(revocations);
+      const ids = callerIssuer
+        ? all.filter((i) => i.startsWith(`${callerIssuer} `)).map((i) => i.slice(callerIssuer.length + 1))
+        : all;
+      return send(res, 200, { ids });
     }
     const revMatch = method === "GET" && /^\/v1\/revoked\/(.+)$/.exec(path);
     if (revMatch) {
       const id = decodeURIComponent(revMatch[1]);
-      return send(res, 200, { revoked: Boolean(await revocations.isRevoked(id)) });
+      // Tenants see their own namespaced revocations PLUS global (admin) ones.
+      const revoked =
+        (await revocations.isRevoked(revKey(id))) ||
+        (callerIssuer ? await revocations.isRevoked(id) : false);
+      return send(res, 200, { revoked: Boolean(revoked) });
     }
 
     // ---- Audit retention ----
@@ -154,13 +171,25 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     }
     if (method === "GET" && path === "/v1/audit") {
       // A tenant token is locked to its own issuer, ignoring any ?issuer.
-      if (callerIssuer) return send(res, 200, { entries: await audit.forIssuer(callerIssuer) });
-      const issuer = url.searchParams.get("issuer");
-      if (issuer) return send(res, 200, { entries: await audit.forIssuer(issuer) });
-      if (options.tenantScoped) {
-        return send(res, 403, { error: "issuer query required (tenant-scoped)" });
+      let entries: AuditEntry[];
+      if (callerIssuer) {
+        entries = await audit.forIssuer(callerIssuer);
+      } else {
+        const issuer = url.searchParams.get("issuer");
+        if (issuer) entries = await audit.forIssuer(issuer);
+        else if (options.tenantScoped) {
+          return send(res, 403, { error: "issuer query required (tenant-scoped)" });
+        } else entries = await audit.all();
       }
-      return send(res, 200, { entries: await audit.all() });
+      // Pagination so the response stays bounded as the log grows.
+      const total = entries.length;
+      const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+      const limitRaw = Number(url.searchParams.get("limit") ?? 0);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
+      if (offset > 0 || limit !== undefined) {
+        entries = entries.slice(offset, limit !== undefined ? offset + limit : undefined);
+      }
+      return send(res, 200, { entries, total });
     }
     const auditMatch = method === "GET" && /^\/v1\/audit\/(.+)$/.exec(path);
     if (auditMatch) {
@@ -180,12 +209,29 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
         return send(res, 400, { error: "windowMs must be > 0 and limit must be >= 0" });
       }
       // The control plane is the time authority — the client's clock is ignored
-      // so it can't slide the window to evade the shared cap.
-      const allowed = await rate.hit(String(body.key), windowMs, limit, Date.now());
+      // so it can't slide the window to evade the shared cap. Tenant rate keys
+      // are namespaced so tenants can't consume (or observe) each other's caps.
+      const rateKey = callerIssuer ? `${callerIssuer} ${String(body.key)}` : String(body.key);
+      const allowed = await rate.hit(rateKey, windowMs, limit, Date.now());
       return send(res, 200, { allowed });
     }
 
     // ---- Consent ----
+    // Pending requests past their TTL become "expired" — a terminal deny.
+    const sweep = async (r: ConsentRecord): Promise<ConsentRecord> => {
+      if (
+        r.status === "pending" &&
+        options.consentTtlMs !== undefined &&
+        Date.now() - r.createdAt > options.consentTtlMs
+      ) {
+        r.status = "expired";
+        r.decidedAt = Date.now();
+        await consents.put(r);
+      }
+      return r;
+    };
+    // A tenant token only sees/decides its own consent records.
+    const visible = (r: ConsentRecord) => !callerIssuer || r.issuer === callerIssuer;
     if (method === "POST" && path === "/v1/consent") {
       const body = await readJson(req);
       if (!body?.agent || !body?.capability) {
@@ -197,6 +243,7 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
         agent: String(body.agent),
         capability: String(body.capability),
         context: body.context as Record<string, unknown> | undefined,
+        ...(callerIssuer ? { issuer: callerIssuer } : {}),
         status: "pending",
         createdAt: Date.now(),
       };
@@ -204,12 +251,15 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
       return send(res, 201, record);
     }
     if (method === "GET" && path === "/v1/consent") {
-      return send(res, 200, { consents: await consents.list() });
+      const all = await Promise.all((await consents.list()).map(sweep));
+      return send(res, 200, { consents: all.filter(visible) });
     }
     const consentDecide = method === "POST" && /^\/v1\/consent\/([^/]+)\/decision$/.exec(path);
     if (consentDecide) {
       const record = await consents.get(consentDecide[1]);
-      if (!record) return send(res, 404, { error: "not found" });
+      if (!record || !visible(record)) return send(res, 404, { error: "not found" });
+      await sweep(record);
+      if (record.status === "expired") return send(res, 200, record);
       const body = await readJson(req);
       record.status = body?.approve ? "approved" : "denied";
       record.decidedAt = Date.now();
@@ -219,7 +269,8 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
     const consentGet = method === "GET" && /^\/v1\/consent\/([^/]+)$/.exec(path);
     if (consentGet) {
       const record = await consents.get(consentGet[1]);
-      return record ? send(res, 200, record) : send(res, 404, { error: "not found" });
+      if (!record || !visible(record)) return send(res, 404, { error: "not found" });
+      return send(res, 200, await sweep(record));
     }
 
     // ---- Policy ----
@@ -351,7 +402,7 @@ if (runningAsMain()) {
   void (async () => {
     const { join } = await import("node:path");
     const { homedir } = await import("node:os");
-    const { FileRevocationStore, FileAuditStore, FileConsentStore, FilePolicyStore } =
+    const { FileRevocationStore, FileAuditStore, FileConsentStore, FilePolicyStore, FileRateStore } =
       await import("./persist.js");
     const home = process.env.BEHALF_HOME ?? join(homedir(), ".behalf");
     const port = Number(process.env.PORT ?? 8787);
@@ -360,6 +411,7 @@ if (runningAsMain()) {
       audit: new FileAuditStore(join(home, "audit.jsonl")),
       consents: new FileConsentStore(join(home, "consents.json")),
       policies: new FilePolicyStore(join(home, "policies.json")),
+      rate: new FileRateStore(join(home, "rate.json")),
       token: process.env.BEHALF_TOKEN,
     });
     const bound = await cp.listen(port);

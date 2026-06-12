@@ -1,4 +1,5 @@
 import type { AttenuateOptions, AuditEntry, Caveat, MandateToken, Proof } from "./types.js";
+import { exportPrivateKey } from "./crypto.js";
 import type { KeyObject } from "node:crypto";
 
 /**
@@ -12,7 +13,7 @@ export interface Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void>;
   attenuate(token: MandateToken, delegationKey: KeyObject | undefined, opts: AttenuateOptions): Mandate;
-  provePossession(token: MandateToken, delegationKey: KeyObject): Proof;
+  provePossession(token: MandateToken, delegationKey: KeyObject, action: string, nonce?: string): Proof;
   revoke(id: string): Promise<void>;
   audit(id: string): Promise<AuditEntry[]>;
 }
@@ -102,15 +103,16 @@ export class Mandate {
   }
 
   /**
-   * Mint a fresh proof of possession for presenting this mandate across a trust
-   * boundary (e.g. an A2A call). Requires the delegation key, so only the
-   * legitimate holder can produce it.
+   * Mint a fresh proof of possession for performing `action`, to present this
+   * mandate across a trust boundary (e.g. an A2A call). Bound to the action and
+   * the exact chain. Requires the delegation key, so only the legitimate holder
+   * can produce it.
    */
-  prove(): Proof {
+  prove(action: string, opts: { nonce?: string } = {}): Proof {
     if (!this.delegationKey) {
       throw new Error("cannot prove possession: this mandate was imported without its key");
     }
-    return this.engine.provePossession(this.token, this.delegationKey);
+    return this.engine.provePossession(this.token, this.delegationKey, action, opts.nonce);
   }
 
   /** Revoke this mandate and its entire downstream chain. */
@@ -118,7 +120,7 @@ export class Mandate {
     return this.engine.revoke(this.id);
   }
 
-  /** This mandate's tamper-evident audit trail. */
+  /** This mandate's hash-chained audit trail. */
   audit(): Promise<AuditEntry[]> {
     return this.engine.audit(this.id);
   }
@@ -126,5 +128,22 @@ export class Mandate {
   /** Compact, transmittable string form (base64url JSON of the public token). */
   serialize(): string {
     return Buffer.from(JSON.stringify(this.token), "utf8").toString("base64url");
+  }
+
+  /**
+   * Transferable holder credential: the token PLUS its delegation key, so the
+   * recipient can authorize, prove, and attenuate after `engine.import(...)`.
+   * This is how a delegated mandate is handed to a sub-agent in another process.
+   *
+   * TREAT AS A SECRET: anyone holding this string can exercise the mandate's
+   * full authority until expiry/revocation. Deliver only over a secure channel.
+   * Use `serialize()` for the public, presentation-only form.
+   */
+  serializeWithKey(): string {
+    if (!this.delegationKey) {
+      throw new Error("cannot export with key: this mandate was imported without its key");
+    }
+    const payload = { token: this.token, key: exportPrivateKey(this.delegationKey) };
+    return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   }
 }

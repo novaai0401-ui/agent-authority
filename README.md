@@ -7,7 +7,8 @@ Agent authority is becoming required infrastructure: multi-agent systems are
 already the norm, yet most tool servers ship with no auth at all. The *standard*
 for agent identity and delegation is being defined by NIST, the IETF, and the
 Linux Foundation's Agentic AI Foundation. Behalf doesn't try to win that race —
-it's a clean, neutral **implementation** of it.
+it's the clean, neutral, AI-legible **implementation** of it. The `requests` of
+the agent era: MIT-licensed, the install nobody reinvents.
 
 Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token that proves *who authorized what, within which limits, and
@@ -54,7 +55,7 @@ const child = mandate.attenuate({ can: ["read:calendar"], expiresIn: "10m" });
 // 4. REVOKE — kill a mandate and its whole downstream chain, instantly
 await Behalf.revoke(mandate.id);
 
-// 5. AUDIT — every authorize() already wrote a tamper-evident record
+// 5. AUDIT — every authorize() already wrote a hash-chained record
 const trail = await Behalf.audit(mandate.id);
 ```
 
@@ -81,9 +82,8 @@ grant's `spend:usd<=50`.
 1. **Thin & end-of-chain.** Zero runtime dependencies — built on the platform's
    own crypto.
 2. **One obvious way.** Exactly one canonical method per task.
-3. **Typed & discoverable.** Ships with an MCP server and typed
-   [schemas](./schemas) so integrations are correct by construction. (Automated
-   ingestion/reuse is restricted — see [llms.txt](./llms.txt).)
+3. **AI-legible by default.** Ships with an MCP server, [`llms.txt`](./llms.txt),
+   and typed [schemas](./schemas) so coding agents discover and call it correctly.
 4. **Standards-tracking, not standards-defining.** A clean facade over
    SPIFFE / OAuth 2.1 OBO / capability tokens.
 5. **Neutral.** No cloud, model, or framework lock-in.
@@ -122,17 +122,54 @@ dropping its own block.
 // In-process holder: mandate.authorize() mints + checks the proof for you.
 await mandate.authorize("spend:usd=20");
 
-// Across a trust boundary, the holder presents the token + a fresh proof;
-// the verifier needs only the issuer's PUBLIC key (no shared secret):
+// Across a trust boundary, the holder presents the token + a fresh,
+// action-bound proof; the verifier needs only the issuer's PUBLIC key:
 const verifier = createBehalf({ trust: [issuer.publicKey] });
-await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove());
+await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove("spend:usd=20"));
 ```
 
 For an advisory "would this token's scope allow X?" check that does **not** prove
-possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. A
-mandate restored via `import` can be inspected and verified, but to authorize or
-delegate it you must hold its key. Over HTTP, `behalf/a2a`'s `present()` attaches
-the proof automatically.
+possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. Over
+HTTP, `behalf/a2a`'s `present()` attaches the proof automatically.
+
+Proofs are bound to the action and fresh within `proofSkewMs` (default 5 min).
+For **true single-use anti-replay**, the verifier issues a challenge:
+`const nonce = verifier.challenge()` → holder binds it with
+`mandate.prove(action, { nonce })` → the verifier consumes it on use. Engines
+created with `requireNonce: true` refuse nonce-less proofs entirely.
+
+There are two serializations, and the difference matters:
+
+- **`mandate.serialize()`** — the public token. Safe to show anyone; after
+  `import` it can be inspected and verified, but **not** authorized, proved, or
+  delegated (it carries no key).
+- **`mandate.serializeWithKey()`** — the holder credential (token **+**
+  delegation key). This is how you hand a delegated mandate to a sub-agent in
+  another process: after `import` it has full holder powers. **Treat it as a
+  secret** and deliver it only over a secure channel.
+
+### Issuer key rotation (with overlap)
+
+```ts
+const v2 = v1.rotate();          // fresh key, same stores, still trusts v1
+// 1) distribute v2.publicKey to verifiers (verifier.trustKey(v2.publicKey))
+// 2) new grants are signed by v2; old mandates keep verifying
+// 3) after the longest outstanding mandate expires:
+v2.untrustKey(v1.publicKey);     // end the overlap — old-key mandates retire
+```
+
+### Audit checkpoints (anchoring)
+
+The audit log is an unkeyed hash chain — verifiable, but a writer with store
+access could rewrite it and tail-deletion is invisible. `checkpointAudit()`
+signs the current head; store the checkpoint **out of the writer's reach** and
+`verifyAuditCheckpoint(cp)` later detects tail-deletion and rewrites:
+
+```ts
+const cp = await engine.checkpointAudit();   // ship to object storage / a ledger
+// later, e.g. nightly:
+const { ok, reason } = await engine.verifyAuditCheckpoint(cp);
+```
 
 ## What maps to the standard underneath
 
@@ -153,7 +190,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 86 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 105 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -175,8 +212,10 @@ After `npm run build`, the `behalf` CLI manages mandates from the terminal
 node dist/cli.js pubkey
 M=$(node dist/cli.js grant --principal alice --agent research \
       --can "read:calendar" --can "spend:usd<=50" --expires 1h)
+# $M is a HOLDER credential (includes the delegation key — keep it secret).
+# Add --public to emit the presentation-only token instead.
 node dist/cli.js inspect "$M"
-node dist/cli.js authorize "$M" "spend:usd=20"   # ALLOW
+node dist/cli.js authorize "$M" "spend:usd=20"   # ALLOW (real check, proof of possession)
 node dist/cli.js authorize "$M" "spend:usd=99"   # DENY
 node dist/cli.js revoke <mandate-id>
 node dist/cli.js audit  <mandate-id>
@@ -255,7 +294,8 @@ const behalf = createBehalf({
 ### Control plane (revocation propagation + audit retention)
 
 For multi-agent deployments, the control plane centralizes revocation (revoke
-once, every agent sees it), retains one tamper-evident audit log, and offers a
+once, every agent sees it), retains one hash-chained audit log (integrity-
+chained; see Limitations for its threat model), and offers a
 consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
 same stores — point agents at it with the `behalf/remote` client stores and the
 five-verb API is unchanged.
@@ -287,10 +327,12 @@ const behalf = createBehalf({
 ### Cross-language interop
 
 A mandate issued by either reference port verifies in the other: both encode keys
-as raw Ed25519 (base64url) and produce byte-identical canonical block bytes, so a
-TS-issued mandate authorizes under the Python verifier and vice versa — including
-attenuated multi-block chains. Checked by `npm run test:interop` (needs `python3`)
-and in CI.
+as raw Ed25519 (base64url) and compute **sorted-key canonical JSON** for the
+signed bytes, so a TS-issued mandate authorizes under the Python verifier and
+vice versa — including attenuated multi-block chains and the action-bound
+possession proof. A committed fixture, [`vectors/mandate-vector.json`](./vectors/mandate-vector.json),
+is verified by *both* test suites so the wire format can't drift; any third-party
+implementation should verify it too.
 
 ```bash
 npm run test:interop   # PY⇄TS, issue in one port, verify/authorize in the other
@@ -302,7 +344,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 68 tests, zero dependencies
+python3 -m unittest discover -s tests   # 85 tests, zero dependencies
 ```
 
 ```python
@@ -322,7 +364,7 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 - **`behalf`** (npm) — the core TypeScript library, near-zero deps.
 - **`behalf/mcp`** + **`behalf/a2a`** — drop-in enforcement middleware.
 - **`behalf`** (PyPI) — Python port, identical API shape.
-- **MCP server + typed schemas** — the integration kit (`llms.txt` is a usage/AI policy, not an ingestion guide).
+- **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
 ## Status
@@ -349,11 +391,11 @@ generator (`python -m behalf.cli`, or the console scripts after `pip install`).
 
 Honest about what this reference implementation does *not* yet do:
 
-- **Revocation, rate, and consent are shared across tenants.** Per-tenant tokens
-  (`tenants: { token: issuerPub }`) isolate *audit* (a token reads/writes only
-  its own issuer) and give each tenant a private *policy* namespace, but
-  revocation ids, rate keys, and consent records live in one shared space. That's
-  fine for a single trust domain; for hard multi-tenancy, run a plane per tenant.
+- **Tenant isolation requires per-tenant tokens.** With
+  `tenants: { token: issuerPub }`, audit, policy, revocation, rate, and consent
+  are all namespaced per tenant (admin revocations stay global). Without tenant
+  tokens the plane is a single trust domain — run one plane per trust domain in
+  that mode.
 - **Shared rate checks hit the network each call.** `HttpRateStore` consults the
   control plane on every `authorize()` (the cap is authoritative and can't be
   cached). The plane stamps each hit with its **own clock** and validates the
@@ -372,10 +414,11 @@ Honest about what this reference implementation does *not* yet do:
 - **Rate windows are sliding-count, not token-bucket**, and rejected attempts
   are not counted — adequate for caps, not for burst shaping.
 - **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
-  naive single-record tampering, and is verifiable without trusting storage — but
-  an adversary with full write access can recompute the chain, and tail deletion
-  isn't detectable. For stronger guarantees, sign entries/checkpoints, anchor the
-  head hash externally, or use append-only/WORM storage.
+  naive single-record tampering — but a writer with full store access can
+  recompute the chain, and tail deletion alone isn't detectable. Mitigation
+  shipped: `checkpointAudit()` signs the head; store checkpoints out of the
+  writer's reach and `verifyAuditCheckpoint()` detects deletion/rewrites.
+  WORM/append-only storage remains the strongest option.
 - **`agent` binding is advisory, not cryptographic.** The `agent` caveat is a
   string label; nothing yet ties a mandate to a specific agent *identity* (a
   SPIFFE/SVID-style key binding is roadmap). Treat it as documentation, not an
@@ -390,8 +433,5 @@ one before any 1.0 / production positioning.
 
 ## License
 
-**PolyForm Strict License 1.0.0** — see [LICENSE](./LICENSE). You may **use** the
-software, but you may **not** distribute it or make changes or new works based on
-it. An additional AI/automated-use policy (no training, crawling, or
-re-implementation) is in [llms.txt](./llms.txt). For any other use, contact the
-maintainers via the issue tracker.
+MIT — see [LICENSE](./LICENSE). Open source, use it anywhere, including
+commercially. Contributions welcome.

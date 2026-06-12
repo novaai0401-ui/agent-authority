@@ -39,7 +39,7 @@ test("a verified mandate authorizes a cross-agent call", async () => {
       can: ["spend:usd<=50"],
       expiresIn: "1h",
     });
-    const res = await behalfFetch(srv.url, mandate, { method: "POST" });
+    const res = await behalfFetch(srv.url, mandate, { method: "POST" }, { action: "spend:usd=20" });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true, agent: "caller" });
   } finally {
@@ -66,7 +66,7 @@ test("an untrusted issuer's mandate is rejected", async () => {
   const srv = await startServer(callee, () => "read:calendar");
   try {
     const mandate = issuer.grant({ principal: "u", agent: "x", can: ["read:calendar"], expiresIn: "1h" });
-    const res = await behalfFetch(srv.url, mandate, { method: "GET" });
+    const res = await behalfFetch(srv.url, mandate, { method: "GET" }, { action: "read:calendar" });
     assert.equal(res.status, 403);
   } finally {
     await srv.close();
@@ -85,7 +85,7 @@ test("the caller can attenuate before forwarding (downstream gets less)", async 
       srv.url,
       mandate,
       { method: "POST" },
-      { attenuate: { can: ["spend:usd<=20"], agent: "sub" } },
+      { action: "spend:usd=40", attenuate: { can: ["spend:usd<=20"], agent: "sub" } },
     );
     assert.equal(res.status, 403);
   } finally {

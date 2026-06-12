@@ -77,7 +77,9 @@ def behalf_mcp_tools(engine: Optional[Behalf] = None) -> list[dict]:
             can=args["can"],
             expires_in=args["expiresIn"],
         )
-        return {"mandate": m.serialize(), "id": m.id}
+        # Holder credential (includes the delegation key — a secret); the public
+        # token is included separately for safe sharing/presentation.
+        return {"mandate": m.serialize_with_key(), "publicToken": m.serialize(), "id": m.id}
 
     def present_mandate(args: dict) -> dict:
         m = eng.import_(args["mandate"])

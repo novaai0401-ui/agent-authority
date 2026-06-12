@@ -19,6 +19,38 @@ to [Semantic Versioning](https://semver.org/).
 - **Attenuation operator direction (fixes M-1).** The narrowing check now
   rejects direction flips (e.g. narrowing `spend:usd<=50` to `spend:usd>=10`); a
   bound may only be tightened in the same direction or to an exact value within.
+- **Sorted-key canonical JSON (hardens L-1).** Signed bytes use recursively
+  sorted-key canonical JSON in both ports, so cross-implementation drift is
+  structurally impossible. A committed cross-language fixture
+  (`vectors/mandate-vector.json`) is verified by both test suites.
+
+### Security (hardening)
+
+- **Single-use nonce challenges (anti-replay).** `engine.challenge()` issues a
+  nonce the holder binds into its proof (`prove(action, { nonce })`); it is
+  consumed on use, so a captured proof can never be replayed. Engines created
+  with `requireNonce: true` refuse nonce-less proofs.
+- **Full per-tenant isolation on the control plane.** Tenant tokens now
+  namespace revocation ids, rate keys, and consent records (in addition to
+  audit and policy); admin revocations remain global.
+- **Consent TTL** (`consentTtlMs`): pending requests expire to a terminal
+  "expired" state. **Audit pagination**: `GET /v1/audit?offset&limit` with
+  `total`. **FileRateStore**: rate windows survive restarts.
+- **Holder credentials.** `serializeWithKey()` / `import` transfer a delegated
+  mandate (token + key) across process boundaries; MCP `request_mandate` and
+  the CLI now issue usable credentials (post-PoP regression fixes).
+
+### Security (hardening, continued)
+
+- **Issuer key rotation (B5).** `engine.rotate()` returns a fresh-keyed engine
+  sharing stores and trusting the old key for an overlap window; end it with
+  `untrustKey(oldKey)`. `trustKey`/`trustedKeys` manage the trust set.
+- **Signed audit checkpoints (C4).** `checkpointAudit()` /
+  `verifyAuditCheckpoint()` anchor the log head under the issuer key, making
+  tail-deletion and rewrites detectable when checkpoints are stored out of the
+  writer's reach.
+- Fixed: `python -m behalf.control_plane` exited immediately (missing
+  `__main__` guard); the console script was unaffected.
 
 ### Added
 
@@ -42,7 +74,7 @@ to [Semantic Versioning](https://semver.org/).
 - **`CachingRevocationStore`** — bounded-staleness revocation cache.
 - **Tooling.** `behalf` CLI (grant/inspect/authorize/revoke/audit/lint/
   quickstart), `behalf-mcp` and `behalf-control-plane` binaries, dynamic
-  per-surface quickstarts for any AI, and JSON schemas.
+  per-surface quickstarts for any AI, `llms.txt`, and JSON schemas.
 - **Cross-language wire interop** — a mandate issued in one port verifies in the
   other.
 

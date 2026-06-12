@@ -16,8 +16,10 @@ from .crypto import (
     new_key_pair,
     public_of,
     sign_block,
+    sign_message,
     sign_proof,
     verify_block,
+    verify_message,
     verify_proof,
 )
 from .errors import AuthorizationError, BehalfError, IntegrityError, WideningError
@@ -67,6 +69,7 @@ class Behalf:
         audit: Optional[AuditStore] = None,
         rate: Optional[RateStore] = None,
         proof_skew_ms: int = 300_000,
+        require_nonce: bool = False,
         now: Optional[Callable[[], int]] = None,
     ) -> None:
         self._keys = root_key_pair or new_key_pair()
@@ -76,6 +79,8 @@ class Behalf:
         self._audit = audit or MemoryAuditStore()
         self._rate = rate or MemoryRateStore()
         self._proof_skew_ms = proof_skew_ms
+        self._require_nonce = require_nonce
+        self._nonces: dict[str, int] = {}
         self._now = now or (lambda: int(time.time() * 1000))
 
     @property
@@ -140,16 +145,32 @@ class Behalf:
         }
         return Mandate(new_token, self, nxt.private)
 
-    def prove_possession(self, token: dict, delegation_key: str) -> dict:
-        """Mint a proof of possession of the chain's terminal key."""
+    def challenge(self) -> str:
+        """Issue a single-use nonce; bind it into a proof for true anti-replay."""
+        nonce = new_id()
+        self._nonces[nonce] = self._now() + self._proof_skew_ms
+        return nonce
+
+    def prove_possession(
+        self, token: dict, delegation_key: str, action: str, nonce: Optional[str] = None
+    ) -> dict:
+        """Mint a proof of possession of the chain's terminal key, bound to action."""
         ts = self._now()
-        return {"ts": ts, "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts)}
+        proof = {
+            "ts": ts,
+            "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts, action, nonce or ""),
+        }
+        if nonce is not None:
+            proof["nonce"] = nonce
+        return proof
 
     def authorize_as_holder(self, token: dict, action: str, delegation_key: Optional[str]) -> None:
         """Holder path: ``mandate.authorize()`` routes here, minting a PoP."""
         if delegation_key is None:
             raise DelegationError()
-        self.authorize(token, action, self.prove_possession(token, delegation_key))
+        # In-process the engine is its own verifier, so it can self-issue a nonce.
+        nonce = self.challenge() if self._require_nonce else None
+        self.authorize(token, action, self.prove_possession(token, delegation_key, action, nonce))
 
     def authorize(self, token: dict, action: str, proof: Optional[dict] = None) -> None:
         """Verify token + proof of possession of the terminal key, then the action.
@@ -181,8 +202,20 @@ class Behalf:
             return deny("possession proof required")
         if abs(self._now() - int(proof.get("ts", 0))) > self._proof_skew_ms:
             return deny("stale possession proof")
+        # Single-use nonce: consumed on first use, so a captured proof can never
+        # be replayed. Mandatory when the engine is configured require_nonce.
+        nonce = proof.get("nonce")
+        if nonce is not None:
+            expiry = self._nonces.get(nonce)
+            if expiry is None or self._now() > expiry:
+                return deny("unknown or already-used nonce")
+            del self._nonces[nonce]
+        elif self._require_nonce:
+            return deny("nonce required (request one via challenge())")
         terminal = token["blocks"][-1]["nextPub"]
-        if not verify_proof(terminal, token["id"], token["sigs"], int(proof["ts"]), proof["sig"]):
+        if not verify_proof(
+            terminal, token["id"], token["sigs"], int(proof["ts"]), action, proof["sig"], nonce or ""
+        ):
             return deny("invalid possession proof")
 
         # 3. Revocation + expiry + scope (shared with inspect()).
@@ -254,10 +287,79 @@ class Behalf:
     def verify_audit_log(self) -> dict:
         return audit_mod.verify(self._audit.all())
 
+    def checkpoint_audit(self) -> dict:
+        """Sign an anchor over the audit head (store it out of the writer's
+        reach); verify_audit_checkpoint later detects tail-deletion/rewrites."""
+        entries = self._audit.all()
+        head = entries[-1] if entries else None
+        body = {
+            "seq": head["seq"] if head else -1,
+            "hash": head["hash"] if head else audit_mod.GENESIS,
+            "ts": self._now(),
+        }
+        msg = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return {**body, "signer": self.public_key, "sig": sign_message(self._keys.private, msg)}
+
+    def verify_audit_checkpoint(self, checkpoint: dict) -> dict:
+        if checkpoint["signer"] not in self._trusted:
+            return {"ok": False, "reason": "checkpoint signer is not trusted"}
+        body = {"seq": checkpoint["seq"], "hash": checkpoint["hash"], "ts": checkpoint["ts"]}
+        msg = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if not verify_message(checkpoint["signer"], msg, checkpoint["sig"]):
+            return {"ok": False, "reason": "invalid checkpoint signature"}
+        entries = self._audit.all()
+        chain = audit_mod.verify(entries)
+        if not chain["ok"]:
+            return {"ok": False, "reason": f"hash chain broken at seq {chain['brokenAt']}"}
+        if checkpoint["seq"] == -1:
+            return {"ok": True}
+        anchored = next((e for e in entries if e["seq"] == checkpoint["seq"]), None)
+        if anchored is None or anchored["hash"] != checkpoint["hash"]:
+            return {"ok": False, "reason": "anchored entry missing or rewritten (tail deletion / rewrite)"}
+        return {"ok": True}
+
+    # ---- Issuer key rotation (B5) ----
+
+    def rotate(self) -> "Behalf":
+        """Rotate the issuer key with overlap: a NEW engine, fresh keypair,
+        same stores/config, trusting all previously trusted keys (incl. the old
+        one). End the overlap later with untrust_key(old_public_key)."""
+        return Behalf(
+            root_key_pair=new_key_pair(),
+            trust=list(self._trusted),
+            revocations=self._revocations,
+            audit=self._audit,
+            rate=self._rate,
+            proof_skew_ms=self._proof_skew_ms,
+            require_nonce=self._require_nonce,
+            now=self._now,
+        )
+
+    @property
+    def trusted_keys(self) -> list[str]:
+        return list(self._trusted)
+
+    def trust_key(self, public_key: str) -> None:
+        self._trusted.add(public_key)
+
+    def untrust_key(self, public_key: str) -> bool:
+        if public_key == self.public_key:
+            raise BehalfError("cannot untrust this engine's own key")
+        try:
+            self._trusted.remove(public_key)
+            return True
+        except KeyError:
+            return False
+
     def import_(self, serialized: str) -> Mandate:
+        """Accepts both ``serialize()`` (public token: inspect/verify only) and
+        ``serialize_with_key()`` (full holder credential)."""
         pad = "=" * (-len(serialized) % 4)
         raw = base64.urlsafe_b64decode(serialized + pad)
-        return Mandate(json.loads(raw), self)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "token" in parsed and "key" in parsed:
+            return Mandate(parsed["token"], self, parsed["key"])
+        return Mandate(parsed, self)
 
     def verify_signature(self, token: dict) -> None:
         if token.get("v") != 2:

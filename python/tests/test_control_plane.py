@@ -37,11 +37,11 @@ class ControlPlaneTests(unittest.TestCase):
         b = create_behalf(root_key_pair=kp, revocations=HttpRevocationStore(self.base))
 
         m = a.grant(principal="u", agent="a", can=["read:calendar"], expires_in="1h")
-        b.authorize(m.token, "read:calendar", m.prove())  # works before revoke
+        b.authorize(m.token, "read:calendar", m.prove("read:calendar"))  # works before revoke
 
         a.revoke(m.id)
         with self.assertRaises(AuthorizationError):
-            b.authorize(m.token, "read:calendar", m.prove())
+            b.authorize(m.token, "read:calendar", m.prove("read:calendar"))
 
     def test_audit_retained_centrally(self):
         engine = create_behalf(audit=HttpAuditStore(self.base))
@@ -92,9 +92,9 @@ class ControlPlaneTests(unittest.TestCase):
 
         m_a.authorize("send:email")
         m_a.authorize("send:email")
-        b.authorize(m_a.token, "send:email", m_a.prove())  # 3rd, via the other engine
+        b.authorize(m_a.token, "send:email", m_a.prove("send:email"))  # 3rd, via the other engine
         with self.assertRaises(AuthorizationError):
-            b.authorize(m_a.token, "send:email", m_a.prove())
+            b.authorize(m_a.token, "send:email", m_a.prove("send:email"))
         with self.assertRaises(AuthorizationError):
             m_a.authorize("send:email")  # cap is shared, not per-process
 

@@ -76,12 +76,12 @@ class Mandate:
         a proof of possession of the chain's terminal key."""
         self._engine.authorize_as_holder(self.token, action, self._delegation_key)
 
-    def prove(self) -> dict:
-        """Mint a proof of possession for presenting this mandate across a trust
-        boundary. Requires the delegation key (only the holder can produce it)."""
+    def prove(self, action: str, nonce: Optional[str] = None) -> dict:
+        """Mint a proof of possession for performing ``action`` (bound to it and
+        the chain, and to ``nonce`` if given). Requires the key."""
         if self._delegation_key is None:
             raise Exception("cannot prove possession: imported mandate has no key")
-        return self._engine.prove_possession(self.token, self._delegation_key)
+        return self._engine.prove_possession(self.token, self._delegation_key, action, nonce)
 
     def attenuate(
         self,
@@ -102,4 +102,16 @@ class Mandate:
 
     def serialize(self) -> str:
         raw = json.dumps(self.token, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    def serialize_with_key(self) -> str:
+        """Transferable HOLDER credential: token + delegation key, so the
+        recipient can authorize/prove/attenuate after ``import_``. TREAT AS A
+        SECRET — deliver only over a secure channel. Use ``serialize()`` for the
+        public, presentation-only form."""
+        if self._delegation_key is None:
+            raise Exception("cannot export with key: imported mandate has no key")
+        raw = json.dumps(
+            {"token": self.token, "key": self._delegation_key}, separators=(",", ":")
+        ).encode("utf-8")
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")

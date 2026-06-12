@@ -59,7 +59,7 @@ test("serialize / import round-trips", async () => {
   const restored = b.import(m.serialize());
   assert.equal(restored.id, m.id);
   // The restored (public) token still authorizes when the holder presents a proof.
-  await assert.doesNotReject(b.authorize(restored.token, "read:calendar", m.prove()));
+  await assert.doesNotReject(b.authorize(restored.token, "read:calendar", m.prove("read:calendar")));
 });
 
 test("rate limits are enforced across calls", async () => {

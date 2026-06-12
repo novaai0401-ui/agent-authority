@@ -43,8 +43,10 @@ def new_key_pair() -> KeyPair:
 
 
 def canonical_block(block: Block) -> bytes:
+    # Sorted-key canonical JSON — byte-identical to the TS port's canonicalJson.
     return json.dumps(
         {"caveats": block["caveats"], "nextPub": block["nextPub"]},
+        sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
@@ -67,20 +69,38 @@ def public_of(private_b64: str) -> str:
     return _b64(_ed25519.publickey(_unb64(private_b64)))
 
 
-def proof_message(id: str, sigs: list, ts: int) -> bytes:
+def proof_message(id: str, sigs: list, ts: int, action: str, nonce: str = "") -> bytes:
     """Proof-of-possession message — byte-identical to the TS port."""
-    return f"behalf-pop\n{id}\n{','.join(sigs)}\n{ts}".encode("utf-8")
+    return f"behalf-pop\n{id}\n{','.join(sigs)}\n{ts}\n{action}\n{nonce}".encode("utf-8")
 
 
-def sign_proof(private_b64: str, id: str, sigs: list, ts: int) -> str:
+def sign_proof(private_b64: str, id: str, sigs: list, ts: int, action: str, nonce: str = "") -> str:
     seed = _unb64(private_b64)
     pk = _ed25519.publickey(seed)
-    return _b64(_ed25519.signature(proof_message(id, sigs, ts), seed, pk))
+    return _b64(_ed25519.signature(proof_message(id, sigs, ts, action, nonce), seed, pk))
 
 
-def verify_proof(public_b64: str, id: str, sigs: list, ts: int, sig_b64: str) -> bool:
+def verify_proof(
+    public_b64: str, id: str, sigs: list, ts: int, action: str, sig_b64: str, nonce: str = ""
+) -> bool:
     try:
-        return _ed25519.checkvalid(_unb64(sig_b64), proof_message(id, sigs, ts), _unb64(public_b64))
+        return _ed25519.checkvalid(
+            _unb64(sig_b64), proof_message(id, sigs, ts, action, nonce), _unb64(public_b64)
+        )
+    except Exception:
+        return False
+
+
+def sign_message(private_b64: str, message: str) -> str:
+    """Sign an arbitrary canonical message (used for audit checkpoints)."""
+    seed = _unb64(private_b64)
+    pk = _ed25519.publickey(seed)
+    return _b64(_ed25519.signature(message.encode("utf-8"), seed, pk))
+
+
+def verify_message(public_b64: str, message: str, sig_b64: str) -> bool:
+    try:
+        return _ed25519.checkvalid(_unb64(sig_b64), message.encode("utf-8"), _unb64(public_b64))
     except Exception:
         return False
 
