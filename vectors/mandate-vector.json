@@ -1,10 +1,10 @@
 {
-  "description": "Cross-language Behalf test vector. Verify with trust=[pubkey] and a clock fixed at proof.ts: engine.authorize(token, action, proof) must ALLOW; tampering any field must DENY.",
+  "description": "Cross-language Behalf test vector. Verify with trust=[pubkey] and a clock fixed at proof.ts: engine.authorize(token, action, proof) must ALLOW; tampering any field must DENY. Proof message: behalf-pop\\n{id}\\n{sigs,}\\n{ts}\\n{action}\\n{nonce-or-empty}.",
   "action": "spend:usd=10",
-  "pubkey": "9yZZ1Axmh3cYzTbiRi1eV9buX7n-AwSos7SNQStzU4Q",
+  "pubkey": "h4tQPvHL33UEH-y-vAbp37Q0DgCaUvKhNUb1RPITXBg",
   "token": {
     "v": 2,
-    "id": "945a7881-b73a-47ab-bb97-4493b9525b52",
+    "id": "fc05e43e-5299-4725-8912-20a525a54135",
     "blocks": [
       {
         "caveats": [
@@ -25,10 +25,10 @@
           },
           {
             "t": "expires",
-            "at": 1781079750224
+            "at": 1781270690715
           }
         ],
-        "nextPub": "aSneGp2MDwcsy-ygDO2AAFiqUrUaosaHZ9LLZCh4OO8"
+        "nextPub": "DuqOtYTt-eMazEo0IRCEFK77rtMz0GVGgRGeUX3wBtE"
       },
       {
         "caveats": [
@@ -44,20 +44,20 @@
           },
           {
             "t": "id",
-            "id": "6e512876-efc6-4dd1-97a8-be14650e3e4a"
+            "id": "d067b7fe-02a9-46be-ab40-dbebeecea96e"
           }
         ],
-        "nextPub": "dNVQ4F6vVLd_8jiPNteziX6JwopDPl1CAYPMlqLwSwk"
+        "nextPub": "hJn-jjbxXzcow0tf-bnMuTa5EVFAEZO-k5B7qfa9Www"
       }
     ],
     "sigs": [
-      "FMxkHHsI5n_fLPg_H9pP_ULFs0OWPLZhidBMZYGYwYD0JruUye2eQ3FjbEtIxyBwA9c8CkkBGiVSaCoQJepXCQ",
-      "WkF30kxg36p4pirvhzxCDZQ_3q-vCzcQ2emf1sNTexQ-v3pziJfY_4-32sjEK1locAsw5FuATWtGhYsg3WYXCg"
+      "ncNFmqcb5omNijLf1d2KZk-vj-Kw5VTQDZluc6L1XHYcKC9KJlWiuNQNd9RLWV1TU8bs1TZo367RC3Q6VG4gDA",
+      "uFaNyCSQI6P2lRiyvykqTDyobZ2SKOvG8yetGzv0po9ee6oqn-2QeW0SFWxQRPnhWfj4xXwA_t6s1olF3X8dDQ"
     ],
-    "rootPub": "9yZZ1Axmh3cYzTbiRi1eV9buX7n-AwSos7SNQStzU4Q"
+    "rootPub": "h4tQPvHL33UEH-y-vAbp37Q0DgCaUvKhNUb1RPITXBg"
   },
   "proof": {
-    "ts": 1781076150226,
-    "sig": "kU-ZINOs68FwLeJnGwSlfRUwHNc_pwrlkgJSN1HXI6vbifY-zU6NqW13fzIG0nScoqXagVaW5YE8WUpqaDwEAw"
+    "ts": 1781267090717,
+    "sig": "bgzRquVLdMnQrFKgD0Sese6MbcRGXC_7dXWMVSV9F3EMT6LpfrCgH_YQABhVWpgvCqkX9z9ZJsrq_9OGPAioAg"
   }
 }

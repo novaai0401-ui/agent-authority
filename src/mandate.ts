@@ -13,7 +13,7 @@ export interface Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void>;
   attenuate(token: MandateToken, delegationKey: KeyObject | undefined, opts: AttenuateOptions): Mandate;
-  provePossession(token: MandateToken, delegationKey: KeyObject, action: string): Proof;
+  provePossession(token: MandateToken, delegationKey: KeyObject, action: string, nonce?: string): Proof;
   revoke(id: string): Promise<void>;
   audit(id: string): Promise<AuditEntry[]>;
 }
@@ -108,11 +108,11 @@ export class Mandate {
    * the exact chain. Requires the delegation key, so only the legitimate holder
    * can produce it.
    */
-  prove(action: string): Proof {
+  prove(action: string, opts: { nonce?: string } = {}): Proof {
     if (!this.delegationKey) {
       throw new Error("cannot prove possession: this mandate was imported without its key");
     }
-    return this.engine.provePossession(this.token, this.delegationKey, action);
+    return this.engine.provePossession(this.token, this.delegationKey, action, opts.nonce);
   }
 
   /** Revoke this mandate and its entire downstream chain. */

@@ -135,10 +135,9 @@ def control_plane_consent(
         deadline = _time.time() + timeout_ms / 1000
         while _time.time() < deadline:
             cur = client.get_consent(rec["id"])
-            if cur["status"] == "approved":
-                return True
-            if cur["status"] == "denied":
-                return False
+            # Any terminal state other than approved (denied, expired, ...) is a deny.
+            if cur["status"] != "pending":
+                return cur["status"] == "approved"
             _sleep(poll_ms)
         return False
 

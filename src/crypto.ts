@@ -124,8 +124,14 @@ export function importPrivateKey(d: string, x: string): KeyObject {
  * holder has. (Over the wire, run under TLS; for single-use guarantees within
  * the window, layer a verifier-issued nonce.)
  */
-export function proofMessage(id: string, sigs: string[], ts: number, action: string): string {
-  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}\n${action}`;
+export function proofMessage(
+  id: string,
+  sigs: string[],
+  ts: number,
+  action: string,
+  nonce = "",
+): string {
+  return `behalf-pop\n${id}\n${sigs.join(",")}\n${ts}\n${action}\n${nonce}`;
 }
 
 export function signProof(
@@ -134,10 +140,11 @@ export function signProof(
   sigs: string[],
   ts: number,
   action: string,
+  nonce = "",
 ): string {
   return edSign(
     null,
-    Buffer.from(proofMessage(id, sigs, ts, action), "utf8"),
+    Buffer.from(proofMessage(id, sigs, ts, action, nonce), "utf8"),
     delegationKey,
   ).toString("base64url");
 }
@@ -149,11 +156,12 @@ export function verifyProof(
   ts: number,
   action: string,
   sig: string,
+  nonce = "",
 ): boolean {
   try {
     return edVerify(
       null,
-      Buffer.from(proofMessage(id, sigs, ts, action), "utf8"),
+      Buffer.from(proofMessage(id, sigs, ts, action, nonce), "utf8"),
       terminalPub,
       Buffer.from(sig, "base64url"),
     );

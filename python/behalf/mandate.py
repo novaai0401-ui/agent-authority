@@ -76,12 +76,12 @@ class Mandate:
         a proof of possession of the chain's terminal key."""
         self._engine.authorize_as_holder(self.token, action, self._delegation_key)
 
-    def prove(self, action: str) -> dict:
+    def prove(self, action: str, nonce: Optional[str] = None) -> dict:
         """Mint a proof of possession for performing ``action`` (bound to it and
-        the chain), to present across a trust boundary. Requires the key."""
+        the chain, and to ``nonce`` if given). Requires the key."""
         if self._delegation_key is None:
             raise Exception("cannot prove possession: imported mandate has no key")
-        return self._engine.prove_possession(self.token, self._delegation_key, action)
+        return self._engine.prove_possession(self.token, self._delegation_key, action, nonce)
 
     def attenuate(
         self,

@@ -24,6 +24,22 @@ to [Semantic Versioning](https://semver.org/).
   structurally impossible. A committed cross-language fixture
   (`vectors/mandate-vector.json`) is verified by both test suites.
 
+### Security (hardening)
+
+- **Single-use nonce challenges (anti-replay).** `engine.challenge()` issues a
+  nonce the holder binds into its proof (`prove(action, { nonce })`); it is
+  consumed on use, so a captured proof can never be replayed. Engines created
+  with `requireNonce: true` refuse nonce-less proofs.
+- **Full per-tenant isolation on the control plane.** Tenant tokens now
+  namespace revocation ids, rate keys, and consent records (in addition to
+  audit and policy); admin revocations remain global.
+- **Consent TTL** (`consentTtlMs`): pending requests expire to a terminal
+  "expired" state. **Audit pagination**: `GET /v1/audit?offset&limit` with
+  `total`. **FileRateStore**: rate windows survive restarts.
+- **Holder credentials.** `serializeWithKey()` / `import` transfer a delegated
+  mandate (token + key) across process boundaries; MCP `request_mandate` and
+  the CLI now issue usable credentials (post-PoP regression fixes).
+
 ### Added
 
 - **Core (TypeScript + Python).** The five-verb Mandate API — `grant`,

@@ -81,6 +81,7 @@ class ControlPlane:
         policies=None,
         tenant_scoped: bool = False,
         tenants: Optional[dict] = None,
+        consent_ttl_ms: Optional[int] = None,
         token: Optional[str] = None,
     ) -> None:
         self.revocations = revocations or MemoryRevocationStore()
@@ -88,6 +89,7 @@ class ControlPlane:
         self.rate = rate or MemoryRateStore()
         self.tenant_scoped = tenant_scoped
         self.tenants = tenants or {}
+        self.consent_ttl_ms = consent_ttl_ms
         self.token = token
         self.consents = consents or MemoryConsentStore()
         self.policies = policies or MemoryPolicyStore()
@@ -154,6 +156,18 @@ class ControlPlane:
                 except Exception:
                     return None
 
+            def _sweep(self, rec):
+                """Pending consent past its TTL becomes 'expired' (terminal deny)."""
+                if (
+                    rec["status"] == "pending"
+                    and cp.consent_ttl_ms is not None
+                    and int(time.time() * 1000) - rec["createdAt"] > cp.consent_ttl_ms
+                ):
+                    rec["status"] = "expired"
+                    rec["decidedAt"] = int(time.time() * 1000)
+                    cp.consents.put(rec)
+                return rec
+
             def do_GET(self):
                 caller = self._resolve()
                 if caller is None:
@@ -171,20 +185,44 @@ class ControlPlane:
                         _dashboard(_list_revoked(cp.revocations), recent, cp.consents.list())
                     )
                 if path == "/v1/revoked":
-                    return self._send(200, {"ids": _list_revoked(cp.revocations)})
+                    all_ids = _list_revoked(cp.revocations)
+                    if issuer_scope:
+                        prefix = f"{issuer_scope} "
+                        all_ids = [i[len(prefix):] for i in all_ids if i.startswith(prefix)]
+                    return self._send(200, {"ids": all_ids})
                 m = re.match(r"^/v1/revoked/(.+)$", path)
                 if m:
-                    return self._send(200, {"revoked": bool(cp.revocations.is_revoked(unquote(m.group(1))))})
-                if path == "/v1/audit":
+                    rid = unquote(m.group(1))
+                    # Tenants see their namespaced revocations PLUS global (admin) ones.
                     if issuer_scope:
-                        return self._send(200, {"entries": cp.audit.for_issuer(issuer_scope)})
+                        revoked = cp.revocations.is_revoked(f"{issuer_scope} {rid}") or cp.revocations.is_revoked(rid)
+                    else:
+                        revoked = cp.revocations.is_revoked(rid)
+                    return self._send(200, {"revoked": bool(revoked)})
+                if path == "/v1/audit":
                     qs = parse_qs(urlparse(self.path).query)
-                    issuer = qs.get("issuer", [None])[0]
-                    if issuer:
-                        return self._send(200, {"entries": cp.audit.for_issuer(issuer)})
-                    if cp.tenant_scoped:
-                        return self._send(403, {"error": "issuer query required (tenant-scoped)"})
-                    return self._send(200, {"entries": cp.audit.all()})
+                    if issuer_scope:
+                        entries = cp.audit.for_issuer(issuer_scope)
+                    else:
+                        issuer = qs.get("issuer", [None])[0]
+                        if issuer:
+                            entries = cp.audit.for_issuer(issuer)
+                        elif cp.tenant_scoped:
+                            return self._send(403, {"error": "issuer query required (tenant-scoped)"})
+                        else:
+                            entries = cp.audit.all()
+                    total = len(entries)
+                    try:
+                        offset = max(0, int(qs.get("offset", ["0"])[0]))
+                    except ValueError:
+                        offset = 0
+                    try:
+                        limit = int(qs.get("limit", ["0"])[0])
+                    except ValueError:
+                        limit = 0
+                    if offset or limit > 0:
+                        entries = entries[offset : offset + limit] if limit > 0 else entries[offset:]
+                    return self._send(200, {"entries": entries, "total": total})
                 m = re.match(r"^/v1/audit/(.+)$", path)
                 if m:
                     entries = cp.audit.for_mandate(unquote(m.group(1)))
@@ -192,11 +230,16 @@ class ControlPlane:
                         entries = [e for e in entries if e.get("issuer") == issuer_scope]
                     return self._send(200, {"entries": entries})
                 if path == "/v1/consent":
-                    return self._send(200, {"consents": cp.consents.list()})
+                    records = [self._sweep(r) for r in cp.consents.list()]
+                    if issuer_scope:
+                        records = [r for r in records if r.get("issuer") == issuer_scope]
+                    return self._send(200, {"consents": records})
                 m = re.match(r"^/v1/consent/([^/]+)$", path)
                 if m:
                     rec = cp.consents.get(m.group(1))
-                    return self._send(200, rec) if rec else self._send(404, {"error": "not found"})
+                    if not rec or (issuer_scope and rec.get("issuer") != issuer_scope):
+                        return self._send(404, {"error": "not found"})
+                    return self._send(200, self._sweep(rec))
                 m = re.match(r"^/v1/policy/([^/]+)$", path)
                 if m:
                     name = m.group(1)
@@ -218,7 +261,8 @@ class ControlPlane:
                 if path == "/v1/revoke":
                     if not body.get("id"):
                         return self._send(400, {"error": "id required"})
-                    cp.revocations.revoke(str(body["id"]))
+                    rid = str(body["id"])
+                    cp.revocations.revoke(f"{issuer_scope} {rid}" if issuer_scope else rid)
                     return self._send(200, {"ok": True})
                 if path == "/v1/audit":
                     fields = body.get("fields")
@@ -254,6 +298,8 @@ class ControlPlane:
                         "status": "pending",
                         "createdAt": int(time.time() * 1000),
                     }
+                    if issuer_scope:
+                        rec["issuer"] = issuer_scope
                     cp.consents.put(rec)
                     return self._send(201, rec)
                 if path == "/v1/rate":
@@ -265,14 +311,18 @@ class ControlPlane:
                         return self._send(400, {"error": "windowMs must be > 0 and limit must be >= 0"})
                     # The control plane is the time authority — the client's clock
                     # is ignored so it can't slide the window to evade the cap.
+                    rate_key = f"{issuer_scope} {body['key']}" if issuer_scope else body["key"]
                     with cp._audit_lock:
-                        allowed = cp.rate.hit(body["key"], window_ms, limit, int(time.time() * 1000))
+                        allowed = cp.rate.hit(rate_key, window_ms, limit, int(time.time() * 1000))
                     return self._send(200, {"allowed": allowed})
                 m = re.match(r"^/v1/consent/([^/]+)/decision$", path)
                 if m:
                     rec = cp.consents.get(m.group(1))
-                    if not rec:
+                    if not rec or (issuer_scope and rec.get("issuer") != issuer_scope):
                         return self._send(404, {"error": "not found"})
+                    self._sweep(rec)
+                    if rec["status"] == "expired":
+                        return self._send(200, rec)
                     rec["status"] = "approved" if body.get("approve") else "denied"
                     rec["decidedAt"] = int(time.time() * 1000)
                     cp.consents.put(rec)
@@ -342,6 +392,7 @@ def create_control_plane(
     policies=None,
     tenant_scoped: bool = False,
     tenants: Optional[dict] = None,
+    consent_ttl_ms: Optional[int] = None,
     token: Optional[str] = None,
 ) -> ControlPlane:
     return ControlPlane(
@@ -352,5 +403,6 @@ def create_control_plane(
         policies=policies,
         tenant_scoped=tenant_scoped,
         tenants=tenants,
+        consent_ttl_ms=consent_ttl_ms,
         token=token,
     )

@@ -132,6 +132,12 @@ For an advisory "would this token's scope allow X?" check that does **not** prov
 possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. Over
 HTTP, `behalf/a2a`'s `present()` attaches the proof automatically.
 
+Proofs are bound to the action and fresh within `proofSkewMs` (default 5 min).
+For **true single-use anti-replay**, the verifier issues a challenge:
+`const nonce = verifier.challenge()` → holder binds it with
+`mandate.prove(action, { nonce })` → the verifier consumes it on use. Engines
+created with `requireNonce: true` refuse nonce-less proofs entirely.
+
 There are two serializations, and the difference matters:
 
 - **`mandate.serialize()`** — the public token. Safe to show anyone; after
@@ -161,7 +167,7 @@ breaking anyone's code.
 ```bash
 npm install          # dev deps only (typescript, @types/node)
 npm run build        # compile to dist/
-npm test             # 88 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
+npm test             # 100 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
 ```
 
 Run the reference integrations:
@@ -315,7 +321,7 @@ An identical-shape port lives in [`python/`](./python):
 
 ```bash
 cd python
-python3 -m unittest discover -s tests   # 70 tests, zero dependencies
+python3 -m unittest discover -s tests   # 81 tests, zero dependencies
 ```
 
 ```python
@@ -362,11 +368,11 @@ generator (`python -m behalf.cli`, or the console scripts after `pip install`).
 
 Honest about what this reference implementation does *not* yet do:
 
-- **Revocation, rate, and consent are shared across tenants.** Per-tenant tokens
-  (`tenants: { token: issuerPub }`) isolate *audit* (a token reads/writes only
-  its own issuer) and give each tenant a private *policy* namespace, but
-  revocation ids, rate keys, and consent records live in one shared space. That's
-  fine for a single trust domain; for hard multi-tenancy, run a plane per tenant.
+- **Tenant isolation requires per-tenant tokens.** With
+  `tenants: { token: issuerPub }`, audit, policy, revocation, rate, and consent
+  are all namespaced per tenant (admin revocations stay global). Without tenant
+  tokens the plane is a single trust domain — run one plane per trust domain in
+  that mode.
 - **Shared rate checks hit the network each call.** `HttpRateStore` consults the
   control plane on every `authorize()` (the cap is authoritative and can't be
   cached). The plane stamps each hit with its **own clock** and validates the

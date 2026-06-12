@@ -51,6 +51,12 @@ export interface BehalfConfig {
   rate?: RateStore;
   /** Max age (ms) of a possession proof accepted at authorize. Default 5 min. */
   proofSkewMs?: number;
+  /**
+   * Require a verifier-issued single-use nonce (see `challenge()`) on every
+   * possession proof — eliminates replay within the freshness window at the
+   * cost of a challenge round-trip. Default false.
+   */
+  requireNonce?: boolean;
   /** Override the clock — handy for tests. */
   now?: () => number;
 }
@@ -80,6 +86,9 @@ export class Behalf implements Engine {
   private readonly auditStore: AuditStore;
   private readonly rateStore: RateStore;
   private readonly proofSkewMs: number;
+  private readonly requireNonce: boolean;
+  /** Outstanding single-use challenges: nonce → expiry (ms). */
+  private readonly nonces = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(config: BehalfConfig = {}) {
@@ -90,7 +99,19 @@ export class Behalf implements Engine {
     this.auditStore = config.audit ?? new MemoryAuditStore();
     this.rateStore = config.rate ?? new MemoryRateStore();
     this.proofSkewMs = config.proofSkewMs ?? 300_000;
+    this.requireNonce = config.requireNonce ?? false;
     this.now = config.now ?? (() => Date.now());
+  }
+
+  /**
+   * Issue a single-use challenge nonce. The holder binds it into its possession
+   * proof (`prove(action, { nonce })`); `authorize` consumes it, so that proof
+   * can never be replayed — even within the freshness window.
+   */
+  challenge(): string {
+    const nonce = newId();
+    this.nonces.set(nonce, this.now() + this.proofSkewMs);
+    return nonce;
   }
 
   /** This engine's issuer public key (base64url SPKI). Share it with verifiers. */
@@ -169,9 +190,18 @@ export class Behalf implements Engine {
    * terminal key). Throws if the key is absent — you cannot act on a mandate you
    * only hold the public token for.
    */
-  provePossession(token: MandateToken, delegationKey: KeyObject, action: string): Proof {
+  provePossession(
+    token: MandateToken,
+    delegationKey: KeyObject,
+    action: string,
+    nonce?: string,
+  ): Proof {
     const ts = this.now();
-    return { ts, sig: signProof(delegationKey, token.id, token.sigs, ts, action) };
+    return {
+      ts,
+      sig: signProof(delegationKey, token.id, token.sigs, ts, action, nonce ?? ""),
+      ...(nonce !== undefined ? { nonce } : {}),
+    };
   }
 
   /** Holder path: `mandate.authorize()` routes here, minting a PoP from its key. */
@@ -181,7 +211,9 @@ export class Behalf implements Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void> {
     if (!delegationKey) throw new BehalfDelegationError();
-    return this.authorize(token, action, this.provePossession(token, delegationKey, action));
+    // In-process the engine is its own verifier, so it can self-issue a nonce.
+    const nonce = this.requireNonce ? this.challenge() : undefined;
+    return this.authorize(token, action, this.provePossession(token, delegationKey, action, nonce));
   }
 
   /**
@@ -216,8 +248,19 @@ export class Behalf implements Engine {
     // 2. Proof of possession of the chain's terminal key (anti-truncation).
     if (!proof) return deny("possession proof required");
     if (Math.abs(this.now() - proof.ts) > this.proofSkewMs) return deny("stale possession proof");
+    // 2b. Single-use nonce: consumed on first use, so a captured proof can
+    // never be replayed. Mandatory when the engine is configured requireNonce.
+    if (proof.nonce !== undefined) {
+      const expiry = this.nonces.get(proof.nonce);
+      if (expiry === undefined || this.now() > expiry) {
+        return deny("unknown or already-used nonce");
+      }
+      this.nonces.delete(proof.nonce);
+    } else if (this.requireNonce) {
+      return deny("nonce required (request one via challenge())");
+    }
     const terminal = importPublicKey(token.blocks[token.blocks.length - 1].nextPub);
-    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, action, proof.sig)) {
+    if (!verifyProof(terminal, token.id, token.sigs, proof.ts, action, proof.sig, proof.nonce ?? "")) {
       return deny("invalid possession proof");
     }
 

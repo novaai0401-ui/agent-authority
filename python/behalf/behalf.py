@@ -67,6 +67,7 @@ class Behalf:
         audit: Optional[AuditStore] = None,
         rate: Optional[RateStore] = None,
         proof_skew_ms: int = 300_000,
+        require_nonce: bool = False,
         now: Optional[Callable[[], int]] = None,
     ) -> None:
         self._keys = root_key_pair or new_key_pair()
@@ -76,6 +77,8 @@ class Behalf:
         self._audit = audit or MemoryAuditStore()
         self._rate = rate or MemoryRateStore()
         self._proof_skew_ms = proof_skew_ms
+        self._require_nonce = require_nonce
+        self._nonces: dict[str, int] = {}
         self._now = now or (lambda: int(time.time() * 1000))
 
     @property
@@ -140,19 +143,32 @@ class Behalf:
         }
         return Mandate(new_token, self, nxt.private)
 
-    def prove_possession(self, token: dict, delegation_key: str, action: str) -> dict:
+    def challenge(self) -> str:
+        """Issue a single-use nonce; bind it into a proof for true anti-replay."""
+        nonce = new_id()
+        self._nonces[nonce] = self._now() + self._proof_skew_ms
+        return nonce
+
+    def prove_possession(
+        self, token: dict, delegation_key: str, action: str, nonce: Optional[str] = None
+    ) -> dict:
         """Mint a proof of possession of the chain's terminal key, bound to action."""
         ts = self._now()
-        return {
+        proof = {
             "ts": ts,
-            "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts, action),
+            "sig": sign_proof(delegation_key, token["id"], token["sigs"], ts, action, nonce or ""),
         }
+        if nonce is not None:
+            proof["nonce"] = nonce
+        return proof
 
     def authorize_as_holder(self, token: dict, action: str, delegation_key: Optional[str]) -> None:
         """Holder path: ``mandate.authorize()`` routes here, minting a PoP."""
         if delegation_key is None:
             raise DelegationError()
-        self.authorize(token, action, self.prove_possession(token, delegation_key, action))
+        # In-process the engine is its own verifier, so it can self-issue a nonce.
+        nonce = self.challenge() if self._require_nonce else None
+        self.authorize(token, action, self.prove_possession(token, delegation_key, action, nonce))
 
     def authorize(self, token: dict, action: str, proof: Optional[dict] = None) -> None:
         """Verify token + proof of possession of the terminal key, then the action.
@@ -184,9 +200,19 @@ class Behalf:
             return deny("possession proof required")
         if abs(self._now() - int(proof.get("ts", 0))) > self._proof_skew_ms:
             return deny("stale possession proof")
+        # Single-use nonce: consumed on first use, so a captured proof can never
+        # be replayed. Mandatory when the engine is configured require_nonce.
+        nonce = proof.get("nonce")
+        if nonce is not None:
+            expiry = self._nonces.get(nonce)
+            if expiry is None or self._now() > expiry:
+                return deny("unknown or already-used nonce")
+            del self._nonces[nonce]
+        elif self._require_nonce:
+            return deny("nonce required (request one via challenge())")
         terminal = token["blocks"][-1]["nextPub"]
         if not verify_proof(
-            terminal, token["id"], token["sigs"], int(proof["ts"]), action, proof["sig"]
+            terminal, token["id"], token["sigs"], int(proof["ts"]), action, proof["sig"], nonce or ""
         ):
             return deny("invalid possession proof")
 

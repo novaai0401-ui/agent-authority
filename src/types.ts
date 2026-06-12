@@ -55,6 +55,12 @@ export interface MandateToken {
 export interface Proof {
   ts: number;
   sig: string;
+  /**
+   * Optional verifier-issued single-use nonce (from `engine.challenge()`).
+   * When present it is bound into the signature and consumed on use, giving
+   * true anti-replay; without it, replay is bounded only by `proofSkewMs`.
+   */
+  nonce?: string;
 }
 
 /** Options for {@link Behalf.grant}. */
@@ -116,7 +122,9 @@ export interface ConsentRecord {
   agent: string;
   capability: string;
   context?: Record<string, unknown>;
-  status: "pending" | "approved" | "denied";
+  /** Tenant issuer this request belongs to (set when created with a tenant token). */
+  issuer?: string;
+  status: "pending" | "approved" | "denied" | "expired";
   createdAt: number;
   decidedAt?: number;
 }

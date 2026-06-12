@@ -163,8 +163,8 @@ export function controlPlaneConsent(
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const cur = await client.getConsent(rec.id);
-      if (cur.status === "approved") return true;
-      if (cur.status === "denied") return false;
+      // Any terminal state other than approved (denied, expired, …) is a deny.
+      if (cur.status !== "pending") return cur.status === "approved";
       await sleep(pollMs);
     }
     return false; // timed out → deny
