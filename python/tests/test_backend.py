@@ -22,6 +22,14 @@ class BackendTests(unittest.TestCase):
     def test_is_constant_time_matches_backend(self):
         self.assertEqual(is_constant_time(), crypto.backend() != "pure-python")
 
+    def test_expected_backend_when_pinned(self):
+        # CI sets BEHALF_EXPECT_BACKEND after installing a native lib, so the
+        # native code paths are actually exercised (not just the fallback).
+        expected = os.environ.get("BEHALF_EXPECT_BACKEND")
+        if expected:
+            self.assertEqual(crypto.backend(), expected)
+            self.assertTrue(is_constant_time())
+
     def test_active_backend_round_trips(self):
         kp = crypto.new_key_pair()
         block = {"caveats": [{"t": "cap", "can": ["read:x"]}], "nextPub": kp.public}
