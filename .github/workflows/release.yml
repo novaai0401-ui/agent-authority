@@ -65,8 +65,8 @@ jobs:
       # "pending publisher" first (owner: novaai0401-ui, repo: agent-authority,
       # workflow: release.yml); this works even though the project doesn't exist
       # yet, and needs NO PYPI_TOKEN secret. See README "Publishing".
-      - name: Publish to PyPI (tag only)
-        if: github.ref_type == 'tag'
+      - name: Publish to PyPI (tag or manual dispatch)
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: python/dist/
