@@ -37,6 +37,7 @@ Guarantees, with the mechanism and the test that pins each one:
 | Tenant isolation on a shared control plane | per-tenant bearer tokens namespace audit/policy/revocation/rate/consent | `test/control-plane.test.ts`, `test/hardening.test.ts` |
 | Issuer key rotation with overlap | `rotate()` / `trustKey` / `untrustKey` | `test/rotation.test.ts` |
 | Audit tail-deletion/rewrite detection | signed head checkpoints | `test/rotation.test.ts`, `python/tests/test_rotation.py` |
+| A stolen holder credential cannot act as the bound agent | cryptographic agent-identity binding (`bindAgent` → `agentKey` caveat), proven at authorize; conjunctive so it cannot be stripped or bypassed | `test/agent-binding.test.ts`, `python/tests/test_agent_binding.py` |
 
 ## Explicit non-goals / accepted limitations
 
@@ -45,10 +46,16 @@ Guarantees, with the mechanism and the test that pins each one:
   (`checkpointAudit` / `verifyAuditCheckpoint`) detect tail-deletion and
   rewrites **provided checkpoints are stored out of the writer's reach**;
   WORM/append-only storage remains the strongest deployment option.
-- **`agent` caveat is an advisory label**, not a cryptographic identity binding
-  (SPIFFE/SVID-style binding is roadmap).
+- **The `agent` caveat is an advisory label.** For a cryptographic identity
+  binding, grant with `bindAgent` (the agent's public key): this adds an
+  `agentKey` caveat that authorize enforces by requiring a proof of possession of
+  the matching private key, so a stolen `serializeWithKey` credential alone
+  cannot act. Bindings are conjunctive (every `agentKey` caveat must be
+  satisfied), so they cannot be stripped or shadowed downstream. The agent's
+  private key must be provisioned out of band (Behalf does not distribute it).
 - **Holder credentials (`serializeWithKey`) are secrets** — Behalf assumes a
-  secure delivery channel and does not encrypt them itself.
+  secure delivery channel and does not encrypt them itself. Binding the mandate
+  to an agent identity (`bindAgent`) reduces the blast radius of a leak.
 - **TLS is assumed upstream** for the control plane and A2A transport; without
   a nonce, proof replay is bounded only by `proofSkewMs` (default 5 min).
 - **Pure-Python Ed25519 is not constant-time** (timing side-channels); use the

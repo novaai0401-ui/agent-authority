@@ -4,6 +4,7 @@ import { Mandate } from "./mandate.js";
 import { permits } from "./capability.js";
 import { AuthorizationError } from "./errors.js";
 import type { AttenuateOptions, Proof } from "./types.js";
+import type { KeyPair } from "./crypto.js";
 
 /**
  * A2A (agent-to-agent) HTTP transport.
@@ -33,6 +34,13 @@ export interface PresentOptions {
   action: string;
   /** Narrow the mandate before sending, so the callee gets less authority. */
   attenuate?: AttenuateOptions;
+  /**
+   * Agent-identity keys to prove, satisfying any `agentKey` caveat bound to this
+   * caller (SVID-style binding). Required when the mandate was granted with
+   * `bindAgent`; otherwise the callee's authorize denies "agent identity proof
+   * required".
+   */
+  agentKeys?: KeyPair[];
 }
 
 /**
@@ -43,7 +51,7 @@ export interface PresentOptions {
  */
 export function present(mandate: Mandate, opts: PresentOptions): Record<string, string> {
   const outgoing = opts.attenuate ? mandate.attenuate(opts.attenuate) : mandate;
-  const proof = outgoing.prove(opts.action);
+  const proof = outgoing.prove(opts.action, { agentKeys: opts.agentKeys });
   return {
     [MANDATE_HEADER]: outgoing.serialize(),
     [ACTION_HEADER]: opts.action,

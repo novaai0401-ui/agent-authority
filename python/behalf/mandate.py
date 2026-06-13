@@ -76,12 +76,20 @@ class Mandate:
         a proof of possession of the chain's terminal key."""
         self._engine.authorize_as_holder(self.token, action, self._delegation_key)
 
-    def prove(self, action: str, nonce: Optional[str] = None) -> dict:
+    def prove(
+        self, action: str, nonce: Optional[str] = None, agent_keys: Optional[list] = None
+    ) -> dict:
         """Mint a proof of possession for performing ``action`` (bound to it and
-        the chain, and to ``nonce`` if given). Requires the key."""
+        the chain, and to ``nonce`` if given). Requires the key.
+
+        ``agent_keys`` are agent-identity ``KeyPair``s (or raw private-key
+        strings) used to satisfy ``agentKey`` caveats (SVID-style binding)."""
         if self._delegation_key is None:
             raise Exception("cannot prove possession: imported mandate has no key")
-        return self._engine.prove_possession(self.token, self._delegation_key, action, nonce)
+        keys = [getattr(k, "private", k) for k in (agent_keys or [])] or None
+        return self._engine.prove_possession(
+            self.token, self._delegation_key, action, nonce, keys
+        )
 
     def attenuate(
         self,
@@ -89,9 +97,15 @@ class Mandate:
         can: Optional[list[str]] = None,
         expires_in: Optional[str | int] = None,
         agent: Optional[str] = None,
+        bind_agent: Optional[str] = None,
     ) -> "Mandate":
         return self._engine.attenuate(
-            self.token, self._delegation_key, can=can, expires_in=expires_in, agent=agent
+            self.token,
+            self._delegation_key,
+            can=can,
+            expires_in=expires_in,
+            agent=agent,
+            bind_agent=bind_agent,
         )
 
     def revoke(self) -> None:

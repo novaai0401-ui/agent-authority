@@ -51,6 +51,15 @@ to [Semantic Versioning](https://semver.org/).
   writer's reach.
 - Fixed: `python -m behalf.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
+- **Cryptographic agent identity binding (C3, SVID-style).** Grant or attenuate
+  with `bindAgent` (the agent's public key) to add an `agentKey` caveat;
+  authorize then requires a proof of possession of the matching private key
+  (`mandate.prove(action, { agentKeys })`, or an engine configured with
+  `agentKey` on the in-process path). A stolen `serializeWithKey` credential can
+  no longer act on its own. Bindings are **conjunctive** — every `agentKey`
+  caveat must be satisfied — so a thief cannot strip one or shadow it by
+  appending their own. Pinned by `test/agent-binding.test.ts` and
+  `python/tests/test_agent_binding.py`; `agent` remains an advisory label.
 
 ### Added
 

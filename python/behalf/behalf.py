@@ -64,6 +64,7 @@ class Behalf:
         self,
         *,
         root_key_pair: Optional[KeyPair] = None,
+        agent_key: Optional[KeyPair] = None,
         trust: Optional[list[str]] = None,
         revocations: Optional[RevocationStore] = None,
         audit: Optional[AuditStore] = None,
@@ -73,6 +74,7 @@ class Behalf:
         now: Optional[Callable[[], int]] = None,
     ) -> None:
         self._keys = root_key_pair or new_key_pair()
+        self._agent_key = agent_key
         self._trusted: set[str] = set(trust or [])
         self._trusted.add(self._keys.public)
         self._revocations = revocations or MemoryRevocationStore()
@@ -88,18 +90,36 @@ class Behalf:
         """This engine's issuer public key (base64url). Share it with verifiers."""
         return self._keys.public
 
+    @property
+    def agent_public_key(self) -> Optional[str]:
+        """This engine's agent-identity public key (base64url), or None. Hand it
+        to a granter so they can ``bind_agent`` a mandate to you; only an engine
+        holding the matching private key can then authorize it."""
+        return self._agent_key.public if self._agent_key else None
+
     # ---- the five verbs ----
 
-    def grant(self, *, principal: str, agent: str, can: list[str], expires_in: str | int) -> Mandate:
+    def grant(
+        self,
+        *,
+        principal: str,
+        agent: str,
+        can: list[str],
+        expires_in: str | int,
+        bind_agent: Optional[str] = None,
+    ) -> Mandate:
         ident = new_id()
         nxt = new_key_pair()
+        caveats = [
+            {"t": "principal", "principal": principal},
+            {"t": "agent", "agent": agent},
+            {"t": "cap", "can": list(can)},
+            {"t": "expires", "at": self._now() + _to_ms(expires_in)},
+        ]
+        if bind_agent:
+            caveats.append({"t": "agentKey", "key": bind_agent})
         block = {
-            "caveats": [
-                {"t": "principal", "principal": principal},
-                {"t": "agent", "agent": agent},
-                {"t": "cap", "can": list(can)},
-                {"t": "expires", "at": self._now() + _to_ms(expires_in)},
-            ],
+            "caveats": caveats,
             "nextPub": nxt.public,
         }
         sig = sign_block(self._keys.private, block)
@@ -114,6 +134,7 @@ class Behalf:
         can: Optional[list[str]] = None,
         expires_in: Optional[str | int] = None,
         agent: Optional[str] = None,
+        bind_agent: Optional[str] = None,
     ) -> Mandate:
         if delegation_key is None:
             raise DelegationError()
@@ -130,6 +151,8 @@ class Behalf:
             caveats.append({"t": "expires", "at": self._now() + _to_ms(expires_in)})
         if agent is not None:
             caveats.append({"t": "agent", "agent": agent})
+        if bind_agent:
+            caveats.append({"t": "agentKey", "key": bind_agent})
         caveats.append({"t": "id", "id": new_id()})
 
         nxt = new_key_pair()
@@ -152,9 +175,17 @@ class Behalf:
         return nonce
 
     def prove_possession(
-        self, token: dict, delegation_key: str, action: str, nonce: Optional[str] = None
+        self,
+        token: dict,
+        delegation_key: str,
+        action: str,
+        nonce: Optional[str] = None,
+        agent_keys: Optional[list[str]] = None,
     ) -> dict:
-        """Mint a proof of possession of the chain's terminal key, bound to action."""
+        """Mint a proof of possession of the chain's terminal key, bound to action.
+
+        ``agent_keys`` are agent-identity private keys (base64url) used to also
+        sign the proof message, satisfying any ``agentKey`` caveat in the chain."""
         ts = self._now()
         proof = {
             "ts": ts,
@@ -162,6 +193,12 @@ class Behalf:
         }
         if nonce is not None:
             proof["nonce"] = nonce
+        agent_sigs = [
+            sign_proof(k, token["id"], token["sigs"], ts, action, nonce or "")
+            for k in (agent_keys or [])
+        ]
+        if agent_sigs:
+            proof["agentSigs"] = agent_sigs
         return proof
 
     def authorize_as_holder(self, token: dict, action: str, delegation_key: Optional[str]) -> None:
@@ -170,7 +207,11 @@ class Behalf:
             raise DelegationError()
         # In-process the engine is its own verifier, so it can self-issue a nonce.
         nonce = self.challenge() if self._require_nonce else None
-        self.authorize(token, action, self.prove_possession(token, delegation_key, action, nonce))
+        # If this engine carries an agent identity, prove it too.
+        agent_keys = [self._agent_key.private] if self._agent_key else None
+        self.authorize(
+            token, action, self.prove_possession(token, delegation_key, action, nonce, agent_keys)
+        )
 
     def authorize(self, token: dict, action: str, proof: Optional[dict] = None) -> None:
         """Verify token + proof of possession of the terminal key, then the action.
@@ -217,6 +258,22 @@ class Behalf:
             terminal, token["id"], token["sigs"], int(proof["ts"]), action, proof["sig"], nonce or ""
         ):
             return deny("invalid possession proof")
+        # Conjunctive agent-identity binding (C3, SVID-style): every agentKey
+        # caveat must be satisfied by an agent signature over the same proof
+        # message. A credential thief lacks these keys and cannot strip a signed
+        # caveat; appending one's own binding only adds a further requirement.
+        agent_sigs = proof.get("agentSigs") or []
+        for c in _all_caveats(token):
+            if c["t"] != "agentKey":
+                continue
+            satisfied = any(
+                verify_proof(
+                    c["key"], token["id"], token["sigs"], int(proof["ts"]), action, s, nonce or ""
+                )
+                for s in agent_sigs
+            )
+            if not satisfied:
+                return deny("agent identity proof required")
 
         # 3. Revocation + expiry + scope (shared with inspect()).
         ok, reason, matched, _request = self._evaluate(token, action)
@@ -326,6 +383,7 @@ class Behalf:
         one). End the overlap later with untrust_key(old_public_key)."""
         return Behalf(
             root_key_pair=new_key_pair(),
+            agent_key=self._agent_key,
             trust=list(self._trusted),
             revocations=self._revocations,
             audit=self._audit,

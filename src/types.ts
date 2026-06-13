@@ -20,7 +20,14 @@ export type Caveat =
   | { t: "agent"; agent: string }
   | { t: "cap"; can: string[] }
   | { t: "expires"; at: number }
-  | { t: "id"; id: string };
+  | { t: "id"; id: string }
+  /**
+   * Cryptographic agent identity binding (SVID-style): the holder must, at
+   * authorize, also prove possession of the private key for this public key.
+   * Conjunctive — every `agentKey` caveat must be satisfied — so a thief who
+   * holds the credential cannot append their own binding to bypass it.
+   */
+  | { t: "agentKey"; key: string };
 
 /**
  * One link in the delegation chain: a set of restrictions plus the public key
@@ -61,6 +68,13 @@ export interface Proof {
    * true anti-replay; without it, replay is bounded only by `proofSkewMs`.
    */
   nonce?: string;
+  /**
+   * Agent-identity signatures over the same proof message, one per agent key the
+   * holder controls. At authorize, every `agentKey` caveat in the chain must be
+   * satisfied by one of these (conjunctive), proving the presenter is the bound
+   * agent — not merely a possessor of the credential.
+   */
+  agentSigs?: string[];
 }
 
 /** Options for {@link Behalf.grant}. */
@@ -73,6 +87,12 @@ export interface GrantOptions {
   can: string[];
   /** Lifetime, e.g. "1h", "10m", "30s", or milliseconds as a number. */
   expiresIn: string | number;
+  /**
+   * Cryptographically bind this grant to an agent identity (the agent's public
+   * key, base64url). The holder must then prove possession of the matching
+   * private key at authorize — see the `agentKey` caveat.
+   */
+  bindAgent?: string;
 }
 
 /** Options for {@link Mandate.attenuate}. */
@@ -83,6 +103,12 @@ export interface AttenuateOptions {
   expiresIn?: string | number;
   /** Optionally re-bind to a specific sub-agent. */
   agent?: string;
+  /**
+   * Add a cryptographic agent-identity binding (the agent's public key,
+   * base64url). Conjunctive with any inherited `agentKey` caveats, so it can
+   * only ever add a requirement, never remove one.
+   */
+  bindAgent?: string;
 }
 
 /** The decision fields of an audit record, before it is sealed into the chain. */

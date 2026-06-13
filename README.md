@@ -148,6 +148,42 @@ There are two serializations, and the difference matters:
   another process: after `import` it has full holder powers. **Treat it as a
   secret** and deliver it only over a secure channel.
 
+### Binding a mandate to an agent identity (SVID-style)
+
+A holder credential is a secret, so a leak is a real risk. Bind the mandate to a
+specific agent identity and a stolen credential is **inert without the agent's
+private key** — possession of the credential is no longer sufficient to act.
+
+Grant (or attenuate) with `bindAgent` set to the agent's public key; that adds an
+`agentKey` caveat. Authorizing then requires a proof of possession of the
+matching private key, in addition to the chain's terminal key:
+
+```ts
+const agent = newKeyPair();                       // the agent's long-lived identity
+const mandate = issuer.grant({
+  principal: user.id,
+  agent: "research-agent",
+  can: ["spend:usd<=50"],
+  expiresIn: "1h",
+  bindAgent: exportPublicKey(agent.publicKey),     // ← cryptographic binding
+});
+
+// The agent proves BOTH the terminal key and its identity:
+await verifier.authorize(
+  mandate.token,
+  "spend:usd=20",
+  mandate.prove("spend:usd=20", { agentKeys: [agent] }),
+);
+// An engine configured with `agentKey: agent` proves it automatically on the
+// in-process path (mandate.authorize(...)) and over A2A via present(..., { agentKeys }).
+```
+
+Bindings are **conjunctive**: every `agentKey` caveat in the chain must be
+satisfied. A thief who steals the credential cannot strip the caveat (it is
+signed into a block) and cannot bypass it by appending their own binding — doing
+so only adds another requirement. The agent's private key is provisioned out of
+band; Behalf never puts it on the wire.
+
 ### Issuer key rotation (with overlap)
 
 ```ts
@@ -419,10 +455,11 @@ Honest about what this reference implementation does *not* yet do:
   shipped: `checkpointAudit()` signs the head; store checkpoints out of the
   writer's reach and `verifyAuditCheckpoint()` detects deletion/rewrites.
   WORM/append-only storage remains the strongest option.
-- **`agent` binding is advisory, not cryptographic.** The `agent` caveat is a
-  string label; nothing yet ties a mandate to a specific agent *identity* (a
-  SPIFFE/SVID-style key binding is roadmap). Treat it as documentation, not an
-  authentication factor.
+- **The `agent` *caveat* is an advisory label** (a string), but cryptographic
+  agent-identity binding now ships: grant/attenuate with `bindAgent` to require a
+  proof of possession of the agent's key at authorize (SVID-style; see "Binding a
+  mandate to an agent identity"). The agent's private key must be provisioned out
+  of band — Behalf enforces the binding but does not distribute keys.
 
 None of these affect the core security properties (unforgeable, attenuation-only,
 truncation-resistant, offline-verifiable mandates); they are
