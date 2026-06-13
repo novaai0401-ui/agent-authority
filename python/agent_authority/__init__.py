@@ -2,7 +2,7 @@
 
 Five verbs, one primitive (the Mandate):
 
-    from behalf import create_behalf
+    from agent_authority import create_behalf
 
     b = create_behalf()
     mandate = b.grant(                          # 1. GRANT
@@ -29,6 +29,13 @@ from .errors import (
     WideningError,
 )
 from .mandate import Mandate
+from .seal import (
+    SealKeyPair,
+    SealUnavailableError,
+    new_seal_key_pair,
+    seal,
+    unseal,
+)
 from .persist import (
     FileAuditStore,
     FileConsentStore,
@@ -58,6 +65,7 @@ from .store import (
     PolicyStore,
     RateStore,
     RevocationStore,
+    TokenBucketRateStore,
 )
 
 __version__ = "0.1.0"
@@ -82,6 +90,7 @@ __all__ = [
     "MemoryRevocationStore",
     "MemoryAuditStore",
     "MemoryRateStore",
+    "TokenBucketRateStore",
     "RevocationStore",
     "AuditStore",
     "RateStore",
@@ -107,4 +116,9 @@ __all__ = [
     "generate_quickstart",
     "find_surface",
     "list_surfaces",
+    "new_seal_key_pair",
+    "seal",
+    "unseal",
+    "SealKeyPair",
+    "SealUnavailableError",
 ]

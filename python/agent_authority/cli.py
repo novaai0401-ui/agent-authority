@@ -1,4 +1,4 @@
-"""`behalf` CLI (Python port; mirrors the TypeScript CLI).
+"""`agent-authority` CLI (Python port; mirrors the TypeScript CLI).
 
 Manages mandates from the terminal. State (issuer keypair, revocation list, audit
 log) lives under $BEHALF_HOME (default ~/.behalf), so a mandate issued in one
@@ -24,18 +24,18 @@ KEY_FILE = os.path.join(HOME, "key.json")
 REV_FILE = os.path.join(HOME, "revocations.json")
 AUDIT_FILE = os.path.join(HOME, "audit.jsonl")
 
-USAGE = f"""behalf — agent authority CLI
+USAGE = f"""agent-authority — agent authority CLI
 
 Usage:
-  behalf pubkey
-  behalf grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
-  behalf inspect <mandate>
-  behalf authorize <mandate> <action>
-  behalf revoke <mandate-id>
-  behalf audit <mandate-id>
-  behalf lint <cap> [<cap> ...]
-  behalf quickstart <surface>   (e.g. claude-code, cursor, copilot, gpt, gemini)
-  behalf quickstart --list
+  agent-authority pubkey
+  agent-authority grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
+  agent-authority inspect <mandate>
+  agent-authority authorize <mandate> <action>
+  agent-authority revoke <mandate-id>
+  agent-authority audit <mandate-id>
+  agent-authority lint <cap> [<cap> ...]
+  agent-authority quickstart <surface>   (e.g. claude-code, cursor, copilot, gpt, gemini)
+  agent-authority quickstart --list
 
 State dir: {HOME}  (override with $BEHALF_HOME)"""
 
@@ -120,10 +120,10 @@ def _run_stateless(cmd, args) -> int:
         return 2
     surface = find_surface(args["_"][0], extra)
     if not surface:
-        print(f'unknown surface "{args["_"][0]}". Run: behalf quickstart --list', file=sys.stderr)
+        print(f'unknown surface "{args["_"][0]}". Run: agent-authority quickstart --list', file=sys.stderr)
         return 2
     command = "python3" if "local" in args else args.get("command")
-    cli_args = ["-m", "behalf.mcp_server"] if "local" in args else _as_list(args.get("arg"))
+    cli_args = ["-m", "agent_authority.mcp_server"] if "local" in args else _as_list(args.get("arg"))
     env = {}
     for e in _as_list(args.get("env")):
         if "=" in e:

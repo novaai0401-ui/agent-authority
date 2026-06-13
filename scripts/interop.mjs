@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createBehalf } from "../dist/index.js";
+import { createBehalf, newSealKeyPair } from "../dist/index.js";
 import { HttpRevocationStore } from "../dist/remote.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -73,6 +73,65 @@ async function allowed(verifier, token, action, proof) {
   const deny = py(["interop_verify.py", issuer.publicKey, child.serialize(), "spend:usd=21", JSON.stringify(child.prove("spend:usd=21"))]);
   check("TS->PY  attenuated chain allows spend:usd=20", allow === "ALLOW");
   check("TS->PY  attenuated chain denies spend:usd=21", deny.startsWith("DENY"));
+}
+
+// ---- D) Cross-language DELEGATION: PY issues a holder credential -> TS imports
+//        + attenuates (signs a new block) -> PY verifies the resulting chain ----
+{
+  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "-", "ignored"]));
+  const eng = createBehalf({ trust: [out.pubkey] });
+  const imported = eng.import(out.cred);
+  check("PY->TS  imported credential can delegate", imported.canDelegate === true);
+  const child = imported.attenuate({ can: ["spend:usd<=20"], agent: "ts-sub" });
+  const childSer = child.serialize();
+  const verify = (action) =>
+    py(["interop_verify.py", out.pubkey, childSer, action, JSON.stringify(child.prove(action))]);
+  check("PY->TS->PY  delegated chain allows spend:usd=20", verify("spend:usd=20") === "ALLOW");
+  check("PY->TS->PY  delegated chain denies spend:usd=21", verify("spend:usd=21").startsWith("DENY"));
+}
+
+// ---- E) Cross-language DELEGATION, reverse: TS issues a holder credential ->
+//        PY imports + attenuates -> TS verifies the resulting chain ----
+{
+  const issuer = createBehalf();
+  const m = issuer.grant({ principal: "ts", agent: "issuer", can: ["spend:usd<=50"], expiresIn: "1h" });
+  const out = JSON.parse(
+    py(["interop_delegate.py", issuer.publicKey, m.serializeWithKey(), "spend:usd<=20", "spend:usd=20,spend:usd=21"]),
+  );
+  const verifier = createBehalf({ trust: [issuer.publicKey] });
+  const token = verifier.import(out.child).token;
+  check("TS->PY->TS  delegated chain allows spend:usd=20", await allowed(verifier, token, "spend:usd=20", out.proofs["spend:usd=20"]));
+  check("TS->PY->TS  delegated chain denies spend:usd=21", !(await allowed(verifier, token, "spend:usd=21", out.proofs["spend:usd=21"])));
+}
+
+// ---- F) Sealed credentials across the language boundary (#8). Only runs when
+//        Python sealing is available (the optional `cryptography` package); the
+//        stdlib-only interop job skips it, the native-backend job exercises it. ----
+{
+  if (py(["interop_seal.py", "avail"]).trim() === "yes") {
+    // TS seals -> Python opens + authorizes.
+    const recip = JSON.parse(py(["interop_seal.py", "keypair"]));
+    const issuer = createBehalf();
+    const m = issuer.grant({ principal: "ts", agent: "a", can: ["read:x"], expiresIn: "1h" });
+    const sealed = m.sealForRecipient(recip.pub);
+    const r = py(["interop_seal.py", "open", issuer.publicKey, recip.priv, recip.pub, sealed, "read:x"]);
+    check("TS-seal -> PY-open authorizes the credential", r === "ALLOW");
+
+    // Python seals -> TS opens + authorizes.
+    const tsRecip = newSealKeyPair();
+    const out = JSON.parse(py(["interop_seal.py", "issue_and_seal", tsRecip.publicKey]));
+    const verifier = createBehalf({ trust: [out.pubkey] });
+    const opened = verifier.importSealed(out.sealed, tsRecip);
+    let ok = true;
+    try {
+      await opened.authorize("read:x");
+    } catch {
+      ok = false;
+    }
+    check("PY-seal -> TS-open authorizes the credential", ok && opened.canDelegate);
+  } else {
+    console.log("skip - sealed-credential interop (Python 'cryptography' not installed)");
+  }
 }
 
 // ---- C) Cross-language revocation propagation through the control plane ----

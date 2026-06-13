@@ -37,6 +37,8 @@ Guarantees, with the mechanism and the test that pins each one:
 | Tenant isolation on a shared control plane | per-tenant bearer tokens namespace audit/policy/revocation/rate/consent | `test/control-plane.test.ts`, `test/hardening.test.ts` |
 | Issuer key rotation with overlap | `rotate()` / `trustKey` / `untrustKey` | `test/rotation.test.ts` |
 | Audit tail-deletion/rewrite detection | signed head checkpoints | `test/rotation.test.ts`, `python/tests/test_rotation.py` |
+| A stolen holder credential cannot act as the bound agent | cryptographic agent-identity binding (`bindAgent` → `agentKey` caveat), proven at authorize; conjunctive so it cannot be stripped or bypassed | `test/agent-binding.test.ts`, `python/tests/test_agent_binding.py` |
+| A holder credential is unreadable in transit to anyone but the recipient | sealed credentials (`seal-1`: ephemeral X25519 → HKDF-SHA256 → AES-256-GCM), wire-compatible across ports | `test/seal.test.ts`, `python/tests/test_seal.py` |
 
 ## Explicit non-goals / accepted limitations
 
@@ -45,14 +47,30 @@ Guarantees, with the mechanism and the test that pins each one:
   (`checkpointAudit` / `verifyAuditCheckpoint`) detect tail-deletion and
   rewrites **provided checkpoints are stored out of the writer's reach**;
   WORM/append-only storage remains the strongest deployment option.
-- **`agent` caveat is an advisory label**, not a cryptographic identity binding
-  (SPIFFE/SVID-style binding is roadmap).
-- **Holder credentials (`serializeWithKey`) are secrets** — Behalf assumes a
-  secure delivery channel and does not encrypt them itself.
+- **The `agent` caveat is an advisory label.** For a cryptographic identity
+  binding, grant with `bindAgent` (the agent's public key): this adds an
+  `agentKey` caveat that authorize enforces by requiring a proof of possession of
+  the matching private key, so a stolen `serializeWithKey` credential alone
+  cannot act. Bindings are conjunctive (every `agentKey` caveat must be
+  satisfied), so they cannot be stripped or shadowed downstream. The agent's
+  private key must be provisioned out of band (Behalf does not distribute it).
+- **Holder credentials (`serializeWithKey`) are secrets.** Two defenses are
+  available: bind the mandate to an agent identity (`bindAgent`) so a *stolen*
+  credential is inert, and/or **seal** it (`sealForRecipient` / `importSealed`,
+  scheme `seal-1`: ephemeral X25519 → HKDF-SHA256 → AES-256-GCM) so it is
+  unreadable in transit/at rest to anyone but the intended recipient. Sealing is
+  wire-compatible across both ports (Python needs the optional `cryptography`
+  package). The plaintext credential is still sensitive once opened — sealing
+  protects delivery, `bindAgent` protects use.
 - **TLS is assumed upstream** for the control plane and A2A transport; without
   a nonce, proof replay is bounded only by `proofSkewMs` (default 5 min).
-- **Pure-Python Ed25519 is not constant-time** (timing side-channels); use the
-  Node port or swap in libsodium for hostile-adjacency Python deployments.
+- **Pure-Python Ed25519 is not constant-time** (timing side-channels). The
+  Python port auto-selects a hardened native backend when importable
+  (`cryptography`, then `PyNaCl`) and falls back to the pure-Python reference
+  otherwise; `agent_authority.crypto.backend()` reports the active one. For
+  hostile-adjacency Python, install `cryptography` (or use the Node port). The
+  selector self-checks that any native backend is byte-compatible with the
+  reference before adopting it, so cross-port tokens stay valid.
 - **Shared rate limits trust the honest-enforcer model**: limit/window derive
   from the caller's mandate; a runtime that skips its own checks is out of
   scope (as for any client-side enforcement).
@@ -61,7 +79,7 @@ Guarantees, with the mechanism and the test that pins each one:
 
 Priority order for an independent cryptographic review:
 
-1. **Token construction** — `src/crypto.ts` / `python/behalf/crypto.py`:
+1. **Token construction** — `src/crypto.ts` / `python/agent_authority/crypto.py`:
    signature chain, canonicalization, key encoding (raw Ed25519, base64url).
 2. **Proof of possession** — message construction (`behalf-pop\n{id}\n{sigs,}\n{ts}\n{action}\n{nonce}`),
    freshness/skew handling, nonce lifecycle.
@@ -71,7 +89,7 @@ Priority order for an independent cryptographic review:
    `amountNarrows`, resource-prefix coverage (`resourceCovers`).
 5. **Control-plane auth** — tenant token resolution and namespacing
    (`src/control-plane.ts route()`).
-6. The pure-Python Ed25519 (`python/behalf/_ed25519.py`) — correctness only;
+6. The pure-Python Ed25519 (`python/agent_authority/_ed25519.py`) — correctness only;
    it is documented as non-constant-time.
 
 Cross-language verifiers should validate against
@@ -81,5 +99,5 @@ Cross-language verifiers should validate against
 
 Both ports have **zero runtime dependencies** (Node built-ins / Python stdlib
 only). Dev dependencies are TypeScript and `@types/node`. The release workflow
-publishes with npm provenance and is dry-run unless a version tag and registry
-tokens are present.
+publishes only on a version tag: PyPI via **Trusted Publishing (OIDC)** — no
+long-lived token — and npm with **provenance**. Non-tag runs are dry-runs.

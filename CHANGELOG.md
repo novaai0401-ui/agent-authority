@@ -13,7 +13,7 @@ to [Semantic Versioning](https://semver.org/).
   **truncate** its chain to recover a parent's wider scope. Authorizing now
   requires proving possession of the chain's terminal key: `mandate.authorize()`
   does this in-process; across a boundary the holder presents a proof
-  (`mandate.prove()` / `behalf/a2a`'s `present()`) and the verifier checks it
+  (`mandate.prove()` / `agent-authority/a2a`'s `present()`) and the verifier checks it
   with `engine.authorize(token, action, proof)`. Advisory, no-possession checks
   use the new `engine.inspect(token, action)`.
 - **Attenuation operator direction (fixes M-1).** The narrowing check now
@@ -49,8 +49,39 @@ to [Semantic Versioning](https://semver.org/).
   `verifyAuditCheckpoint()` anchor the log head under the issuer key, making
   tail-deletion and rewrites detectable when checkpoints are stored out of the
   writer's reach.
-- Fixed: `python -m behalf.control_plane` exited immediately (missing
+- Fixed: `python -m agent_authority.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
+- **Sealed holder credentials (#8).** `mandate.sealForRecipient(pub)` encrypts a
+  holder credential to a recipient's X25519 sealing key; `engine.importSealed`
+  opens it. Scheme `seal-1` (ephemeral X25519 → HKDF-SHA256 → AES-256-GCM) is
+  wire-compatible across both ports — seal in one, open in the other. Native in
+  Node; Python uses the optional `cryptography` package and raises a clear error
+  if it's absent (the rest of the port stays dependency-free). Defense-in-depth
+  for the delivery channel, complementary to `bindAgent`. New helpers
+  `newSealKeyPair` / `seal` / `unseal`; pinned by `test/seal.test.ts`,
+  `python/tests/test_seal.py`, and a cross-language interop case.
+- **Optional hardened crypto backend (Python).** The Python port auto-selects a
+  constant-time native Ed25519 backend when importable (`cryptography`, then
+  `PyNaCl`), falling back to the pure-Python reference; `agent_authority.crypto.backend()`
+  reports the active one. The selector self-checks byte-compatibility with the
+  reference (and tolerates a broken native lib, including Rust panics, without
+  noise) so cross-port tokens stay valid. No new required dependency.
+- **Token-bucket rate limiting.** `TokenBucketRateStore` is a burst-shaping
+  alternative to the default sliding-count `MemoryRateStore` — drop-in for any
+  `RateStore` slot (engine or control plane).
+- **Cross-language delegation verified.** A holder credential
+  (`serializeWithKey`) issued in one port can be imported **and attenuated** in
+  the other; the interop check now pins `PY->TS->PY` and `TS->PY->TS`
+  delegated-chain cases (previously documented as verify-only).
+- **Cryptographic agent identity binding (C3, SVID-style).** Grant or attenuate
+  with `bindAgent` (the agent's public key) to add an `agentKey` caveat;
+  authorize then requires a proof of possession of the matching private key
+  (`mandate.prove(action, { agentKeys })`, or an engine configured with
+  `agentKey` on the in-process path). A stolen `serializeWithKey` credential can
+  no longer act on its own. Bindings are **conjunctive** — every `agentKey`
+  caveat must be satisfied — so a thief cannot strip one or shadow it by
+  appending their own. Pinned by `test/agent-binding.test.ts` and
+  `python/tests/test_agent_binding.py`; `agent` remains an advisory label.
 
 ### Added
 
@@ -72,8 +103,8 @@ to [Semantic Versioning](https://semver.org/).
   into the middleware.
 - **Per-issuer audit scoping** and a `tenantScoped` control-plane mode.
 - **`CachingRevocationStore`** — bounded-staleness revocation cache.
-- **Tooling.** `behalf` CLI (grant/inspect/authorize/revoke/audit/lint/
-  quickstart), `behalf-mcp` and `behalf-control-plane` binaries, dynamic
+- **Tooling.** `agent-authority` CLI (grant/inspect/authorize/revoke/audit/lint/
+  quickstart), `agent-authority-mcp` and `agent-authority-control-plane` binaries, dynamic
   per-surface quickstarts for any AI, `llms.txt`, and JSON schemas.
 - **Cross-language wire interop** — a mandate issued in one port verifies in the
   other.

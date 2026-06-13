@@ -18,9 +18,15 @@ import json
 import secrets
 import uuid
 
-from . import _ed25519
+from . import _backend
 
 Block = dict
+
+
+def backend() -> str:
+    """Name of the active Ed25519 backend (``cryptography``/``pynacl``/
+    ``pure-python``). Pure Python is correct but not constant-time."""
+    return _backend.BACKEND
 
 
 def _b64(raw: bytes) -> str:
@@ -39,7 +45,7 @@ class KeyPair:
 
 def new_key_pair() -> KeyPair:
     seed = secrets.token_bytes(32)
-    return KeyPair(_b64(seed), _b64(_ed25519.publickey(seed)))
+    return KeyPair(_b64(seed), _b64(_backend.publickey(seed)))
 
 
 def canonical_block(block: Block) -> bytes:
@@ -54,19 +60,19 @@ def canonical_block(block: Block) -> bytes:
 
 def sign_block(private_b64: str, block: Block) -> str:
     seed = _unb64(private_b64)
-    pk = _ed25519.publickey(seed)
-    return _b64(_ed25519.signature(canonical_block(block), seed, pk))
+    pk = _backend.publickey(seed)
+    return _b64(_backend.signature(canonical_block(block), seed, pk))
 
 
 def verify_block(public_b64: str, block: Block, sig_b64: str) -> bool:
     try:
-        return _ed25519.checkvalid(_unb64(sig_b64), canonical_block(block), _unb64(public_b64))
+        return _backend.checkvalid(_unb64(sig_b64), canonical_block(block), _unb64(public_b64))
     except Exception:
         return False
 
 
 def public_of(private_b64: str) -> str:
-    return _b64(_ed25519.publickey(_unb64(private_b64)))
+    return _b64(_backend.publickey(_unb64(private_b64)))
 
 
 def proof_message(id: str, sigs: list, ts: int, action: str, nonce: str = "") -> bytes:
@@ -76,15 +82,15 @@ def proof_message(id: str, sigs: list, ts: int, action: str, nonce: str = "") ->
 
 def sign_proof(private_b64: str, id: str, sigs: list, ts: int, action: str, nonce: str = "") -> str:
     seed = _unb64(private_b64)
-    pk = _ed25519.publickey(seed)
-    return _b64(_ed25519.signature(proof_message(id, sigs, ts, action, nonce), seed, pk))
+    pk = _backend.publickey(seed)
+    return _b64(_backend.signature(proof_message(id, sigs, ts, action, nonce), seed, pk))
 
 
 def verify_proof(
     public_b64: str, id: str, sigs: list, ts: int, action: str, sig_b64: str, nonce: str = ""
 ) -> bool:
     try:
-        return _ed25519.checkvalid(
+        return _backend.checkvalid(
             _unb64(sig_b64), proof_message(id, sigs, ts, action, nonce), _unb64(public_b64)
         )
     except Exception:
@@ -94,13 +100,13 @@ def verify_proof(
 def sign_message(private_b64: str, message: str) -> str:
     """Sign an arbitrary canonical message (used for audit checkpoints)."""
     seed = _unb64(private_b64)
-    pk = _ed25519.publickey(seed)
-    return _b64(_ed25519.signature(message.encode("utf-8"), seed, pk))
+    pk = _backend.publickey(seed)
+    return _b64(_backend.signature(message.encode("utf-8"), seed, pk))
 
 
 def verify_message(public_b64: str, message: str, sig_b64: str) -> bool:
     try:
-        return _ed25519.checkvalid(_unb64(sig_b64), message.encode("utf-8"), _unb64(public_b64))
+        return _backend.checkvalid(_unb64(sig_b64), message.encode("utf-8"), _unb64(public_b64))
     except Exception:
         return False
 

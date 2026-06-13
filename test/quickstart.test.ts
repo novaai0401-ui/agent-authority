@@ -20,15 +20,15 @@ test("an MCP surface renders an mcpServers entry", () => {
     args: ["dist/mcp-server.js"],
   });
   const config = JSON.parse(qs.snippet);
-  assert.deepEqual(config.mcpServers.behalf, { command: "node", args: ["dist/mcp-server.js"] });
-  assert.match(qs.cli ?? "", /claude mcp add behalf -- node dist\/mcp-server\.js/);
+  assert.deepEqual(config.mcpServers["agent-authority"], { command: "node", args: ["dist/mcp-server.js"] });
+  assert.match(qs.cli ?? "", /claude mcp add agent-authority -- node dist\/mcp-server\.js/);
 });
 
 test("VS Code / Copilot uses the `servers` key and a stdio type", () => {
   const qs = generateQuickstart(findSurface("copilot")!);
   const config = JSON.parse(qs.snippet);
-  assert.ok(config.servers.behalf);
-  assert.equal(config.servers.behalf.type, "stdio");
+  assert.ok(config.servers["agent-authority"]);
+  assert.equal(config.servers["agent-authority"].type, "stdio");
 });
 
 test("GPT renders OpenAI function tools", () => {
@@ -56,11 +56,11 @@ test("any AI is configurable via a custom surface", () => {
     configKey: "mcpServers",
   };
   assert.ok(listSurfaces([custom]).some((s) => s.id === "my-agent"));
-  const qs = generateQuickstart(custom, { name: "auth", command: "npx", args: ["-y", "behalf-mcp"] });
+  const qs = generateQuickstart(custom, { name: "auth", command: "npx", args: ["-y", "agent-authority-mcp"] });
   assert.equal(JSON.parse(qs.snippet).mcpServers.auth.command, "npx");
 });
 
 test("env vars are included in the server entry", () => {
   const qs = generateQuickstart(findSurface("cursor")!, { env: { BEHALF_HOME: "/tmp/b" } });
-  assert.deepEqual(JSON.parse(qs.snippet).mcpServers.behalf.env, { BEHALF_HOME: "/tmp/b" });
+  assert.deepEqual(JSON.parse(qs.snippet).mcpServers["agent-authority"].env, { BEHALF_HOME: "/tmp/b" });
 });

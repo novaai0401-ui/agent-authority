@@ -1,14 +1,38 @@
-# Behalf
+# agent-authority
 
-> The reference implementation of agent authority. Behalf gives any AI agent a
-> **verifiable, scoped, revocable** identity and delegation chain in five verbs.
+> **Authorization for AI agents** — verifiable, scoped, revocable capability
+> tokens with delegation, for MCP and A2A. Project name: **Behalf**. Zero
+> dependencies, TypeScript **and** Python, offline-verifiable. Five verbs.
+
+[![npm](https://img.shields.io/npm/v/agent-authority?logo=npm)](https://www.npmjs.com/package/agent-authority)
+[![PyPI](https://img.shields.io/pypi/v/agent-authority?logo=pypi&logoColor=white)](https://pypi.org/project/agent-authority/)
+[![CI](https://github.com/novaai0401-ui/agent-authority/actions/workflows/ci.yml/badge.svg)](https://github.com/novaai0401-ui/agent-authority/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+**agent-authority** is the reference implementation of **agent authority**: the
+authorization and delegation layer for AI agents. It gives any agent — and any
+sub-agent it delegates to — a **verifiable, scoped, time-bound, revocable**
+identity and permission chain, so a tool server, MCP host, or agent-to-agent
+(A2A) call can answer *"is this agent actually allowed to do this, right now?"*
+offline, with only a public key.
+
+It solves **AI agent authorization / agent permissions** with **capability-based
+security**: least-privilege, attenuable (macaroon/biscuit-style) **capability
+tokens**, an **OAuth 2.1 on-behalf-of**–style principal→agent grant, and
+**SPIFFE/SVID**-style cryptographic agent identity — without cloud, model, or
+framework lock-in.
+
+```bash
+npm install agent-authority        # Node / TypeScript
+pip install agent-authority        # Python (add the [seal] extra for sealed credentials)
+```
 
 Agent authority is becoming required infrastructure: multi-agent systems are
 already the norm, yet most tool servers ship with no auth at all. The *standard*
 for agent identity and delegation is being defined by NIST, the IETF, and the
-Linux Foundation's Agentic AI Foundation. Behalf doesn't try to win that race —
-it's the clean, neutral, AI-legible **implementation** of it. The `requests` of
-the agent era: MIT-licensed, the install nobody reinvents.
+Linux Foundation's Agentic AI Foundation. This project doesn't try to win that
+race — it's the clean, neutral, AI-legible **implementation** of it. The
+`requests` of the agent era: MIT-licensed, the install nobody reinvents.
 
 Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token that proves *who authorized what, within which limits, and
@@ -17,7 +41,7 @@ through which chain of agents.*
 ## Secure an entire agent in ~6 lines
 
 ```ts
-import { withBehalf } from "behalf/mcp";
+import { withBehalf } from "agent-authority/mcp";
 
 const server = withBehalf(myMcpServer, {
   policy: {
@@ -36,7 +60,7 @@ per-tool code.
 ## The five verbs
 
 ```ts
-import { Behalf } from "behalf";
+import { Behalf } from "agent-authority";
 
 // 1. GRANT — a user authorizes an agent: scoped, capped, short-lived
 const mandate = await Behalf.grant({
@@ -130,7 +154,7 @@ await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove("spend:usd
 
 For an advisory "would this token's scope allow X?" check that does **not** prove
 possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. Over
-HTTP, `behalf/a2a`'s `present()` attaches the proof automatically.
+HTTP, `agent-authority/a2a`'s `present()` attaches the proof automatically.
 
 Proofs are bound to the action and fresh within `proofSkewMs` (default 5 min).
 For **true single-use anti-replay**, the verifier issues a challenge:
@@ -147,6 +171,67 @@ There are two serializations, and the difference matters:
   delegation key). This is how you hand a delegated mandate to a sub-agent in
   another process: after `import` it has full holder powers. **Treat it as a
   secret** and deliver it only over a secure channel.
+
+### Binding a mandate to an agent identity (SVID-style)
+
+A holder credential is a secret, so a leak is a real risk. Bind the mandate to a
+specific agent identity and a stolen credential is **inert without the agent's
+private key** — possession of the credential is no longer sufficient to act.
+
+Grant (or attenuate) with `bindAgent` set to the agent's public key; that adds an
+`agentKey` caveat. Authorizing then requires a proof of possession of the
+matching private key, in addition to the chain's terminal key:
+
+```ts
+const agent = newKeyPair();                       // the agent's long-lived identity
+const mandate = issuer.grant({
+  principal: user.id,
+  agent: "research-agent",
+  can: ["spend:usd<=50"],
+  expiresIn: "1h",
+  bindAgent: exportPublicKey(agent.publicKey),     // ← cryptographic binding
+});
+
+// The agent proves BOTH the terminal key and its identity:
+await verifier.authorize(
+  mandate.token,
+  "spend:usd=20",
+  mandate.prove("spend:usd=20", { agentKeys: [agent] }),
+);
+// An engine configured with `agentKey: agent` proves it automatically on the
+// in-process path (mandate.authorize(...)) and over A2A via present(..., { agentKeys }).
+```
+
+Bindings are **conjunctive**: every `agentKey` caveat in the chain must be
+satisfied. A thief who steals the credential cannot strip the caveat (it is
+signed into a block) and cannot bypass it by appending their own binding — doing
+so only adds another requirement. The agent's private key is provisioned out of
+band; Behalf never puts it on the wire.
+
+### Sealing a holder credential (encrypted delivery)
+
+`serializeWithKey()` is a secret. `bindAgent` makes a *stolen* one inert; for the
+delivery channel itself, **seal** the credential to the recipient so it's
+unreadable to anyone in between:
+
+```ts
+import { newSealKeyPair } from "agent-authority";
+
+const recipient = newSealKeyPair();          // recipient's X25519 sealing key
+// ...recipient publishes recipient.publicKey...
+
+const sealed = mandate.sealForRecipient(recipient.publicKey);  // encrypted blob
+// ...deliver `sealed` over any channel...
+const mine = engine.importSealed(sealed, recipient);           // only the recipient opens it
+await mine.authorize("read:calendar");
+```
+
+The scheme (`seal-1`) is ephemeral X25519 → HKDF-SHA256 → AES-256-GCM and is
+**wire-compatible across both ports** (seal in TypeScript, open in Python or vice
+versa). It's native in Node; in Python it needs the optional `cryptography`
+package (the rest of the port stays dependency-free, and `importSealed` raises a
+clear error if it's missing). The sealing key is X25519 and is *separate* from
+the Ed25519 `bindAgent` identity — combine both for delivery + use protection.
 
 ### Issuer key rotation (with overlap)
 
@@ -205,7 +290,7 @@ npm run example:control-plane   # revocation propagation across agents
 
 ### CLI
 
-After `npm run build`, the `behalf` CLI manages mandates from the terminal
+After `npm run build`, the `agent-authority` CLI manages mandates from the terminal
 (state lives under `$BEHALF_HOME`, default `~/.behalf`):
 
 ```bash
@@ -231,31 +316,31 @@ node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
 
 ```jsonc
 // register with an MCP client, e.g.:
-{ "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
+{ "mcpServers": { "agent-authority": { "command": "node", "args": ["dist/mcp-server.js"] } } }
 ```
 
 ### Quickstarts for any AI
 
-`behalf quickstart` generates the wiring for any surface — Claude Code, Cursor,
+`agent-authority quickstart` generates the wiring for any surface — Claude Code, Cursor,
 Copilot, Windsurf, Gemini CLI, OpenAI Agents (MCP), and GPT / Gemini APIs
 (function tools). Any other AI is configurable via a custom surface file or the
 generic MCP template. See [QUICKSTART.md](./QUICKSTART.md).
 
 ```bash
-behalf quickstart --list
-behalf quickstart claude-code
-behalf quickstart gpt           # OpenAI function tools
-behalf quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
+agent-authority quickstart --list
+agent-authority quickstart claude-code
+agent-authority quickstart gpt           # OpenAI function tools
+agent-authority quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
 ```
 
 ### A2A — agent-to-agent over HTTP
 
-`behalf/a2a` carries a verifiable delegation chain across the network. The caller
+`agent-authority/a2a` carries a verifiable delegation chain across the network. The caller
 attaches its mandate (optionally attenuating it first); the callee verifies the
 chain offline with only the issuer's public key, then authorizes the action:
 
 ```ts
-import { behalfFetch, guard } from "behalf/a2a";
+import { behalfFetch, guard } from "agent-authority/a2a";
 
 // callee: a node:http middleware that authorizes each request
 const gate = guard({ engine: callee, capability: () => "spend:usd<=50" });
@@ -272,11 +357,11 @@ await behalfFetch(url, mandate, { method: "POST" },
 agents and humans write tight capabilities by default:
 
 ```ts
-import { lint } from "behalf";
+import { lint } from "agent-authority";
 lint(["spend:usd", "*"]); // → warnings: add a limit; avoid wildcard
 ```
 
-Also available as `behalf lint <cap> ...` on the CLI.
+Also available as `agent-authority lint <cap> ...` on the CLI.
 
 ### Persistence
 
@@ -284,7 +369,7 @@ Also available as `behalf lint <cap> ...` on the CLI.
 restarts with zero infrastructure:
 
 ```ts
-import { createBehalf, FileRevocationStore, FileAuditStore } from "behalf";
+import { createBehalf, FileRevocationStore, FileAuditStore } from "agent-authority";
 const behalf = createBehalf({
   revocations: new FileRevocationStore("./revocations.json"),
   audit: new FileAuditStore("./audit.jsonl"),
@@ -297,16 +382,16 @@ For multi-agent deployments, the control plane centralizes revocation (revoke
 once, every agent sees it), retains one hash-chained audit log (integrity-
 chained; see Limitations for its threat model), and offers a
 consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
-same stores — point agents at it with the `behalf/remote` client stores and the
+same stores — point agents at it with the `agent-authority/remote` client stores and the
 five-verb API is unchanged.
 
 ```bash
-node dist/control-plane.js     # bin: behalf-control-plane; dashboard at /
+node dist/control-plane.js     # bin: agent-authority-control-plane; dashboard at /
 ```
 
 ```ts
-import { createBehalf } from "behalf";
-import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "behalf/remote";
+import { createBehalf } from "agent-authority";
+import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "agent-authority/remote";
 
 const behalf = createBehalf({
   revocations: new HttpRevocationStore("http://localhost:8787"),
@@ -320,7 +405,7 @@ const behalf = createBehalf({
 // tenant token reads/writes only its own issuer's audit; `token` is admin.
 
 // Optional: cache revocation checks with a bounded staleness window.
-// import { CachingRevocationStore } from "behalf";
+// import { CachingRevocationStore } from "agent-authority";
 // revocations: new CachingRevocationStore(new HttpRevocationStore(url), { ttlMs: 5000 })
 ```
 
@@ -348,7 +433,7 @@ python3 -m unittest discover -s tests   # 85 tests, zero dependencies
 ```
 
 ```python
-from behalf import create_behalf
+from agent_authority import create_behalf
 
 b = create_behalf()
 mandate = b.grant(
@@ -361,9 +446,9 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 ## What ships
 
-- **`behalf`** (npm) — the core TypeScript library, near-zero deps.
-- **`behalf/mcp`** + **`behalf/a2a`** — drop-in enforcement middleware.
-- **`behalf`** (PyPI) — Python port, identical API shape.
+- **`agent-authority`** (npm) — the core TypeScript library, near-zero deps.
+- **`agent-authority/mcp`** + **`agent-authority/a2a`** — drop-in enforcement middleware.
+- **`agent-authority`** (PyPI) — Python port, identical API shape.
 - **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
@@ -371,7 +456,7 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
-persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
+persistence** for revocation + audit, a **`agent-authority` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
 between agents, **capability linting**, **cross-language wire interop**
 (TS⇄Python mandates verify in either port), and a **control plane** for
@@ -382,10 +467,10 @@ the interop check on Node 20/22 and Python 3.9/3.12.
 
 All control-plane state can be file-backed for durability — revocation, audit,
 and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
-`behalf-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
+`agent-authority-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
 port has full parity: not just the library and control plane, but the tooling
-too — the `behalf` CLI, the `behalf-mcp` stdio server, and the quickstart
-generator (`python -m behalf.cli`, or the console scripts after `pip install`).
+too — the `agent-authority` CLI, the `agent-authority-mcp` stdio server, and the quickstart
+generator (`python -m agent_authority.cli`, or the console scripts after `pip install`).
 
 ## Limitations & roadmap
 
@@ -405,24 +490,35 @@ Honest about what this reference implementation does *not* yet do:
   like any client that skips the check). Revocation, by contrast, can be wrapped
   in `CachingRevocationStore` for a bounded staleness window. Signature, scope,
   and expiry are always fully offline.
-- **Cross-language delegation is verify-only.** A mandate issued in one port
-  verifies/authorizes in the other, but attenuation needs the in-memory
-  delegation key, so delegate within the issuing port.
-- **Pure-Python Ed25519 is not constant-time.** The zero-dependency reference
-  signer is correct but not hardened against timing side-channels; use libsodium
-  for production Python deployments. (Node uses its native, hardened crypto.)
-- **Rate windows are sliding-count, not token-bucket**, and rejected attempts
-  are not counted — adequate for caps, not for burst shaping.
+- **Cross-language delegation works.** A holder credential
+  (`serializeWithKey()`) issued in one port can be imported **and attenuated** in
+  the other: a block signed in Python over a chain rooted in TypeScript (or vice
+  versa) verifies, because both ports use raw Ed25519 keys and byte-identical
+  canonical JSON. Pinned by the interop check (`PY->TS->PY` and `TS->PY->TS`
+  delegated-chain cases in `scripts/interop.mjs`).
+- **Pure-Python Ed25519 is not constant-time — auto-upgraded when possible.** The
+  zero-dependency reference signer is correct but not hardened against timing
+  side-channels. The Python port now **auto-selects** a hardened native backend
+  when one is importable (`cryptography`, then `PyNaCl`), falling back to pure
+  Python otherwise; `agent_authority.crypto.backend()` reports which is active. Install
+  `cryptography` for constant-time Python in hostile-adjacency deployments. (Node
+  always uses its native, hardened crypto.)
+- **Rate limiting offers two strategies.** The default `MemoryRateStore` is a
+  sliding-count window (max N per window); `TokenBucketRateStore` is now available
+  for **burst shaping** (an initial burst up to the limit, then a steady refill).
+  Both are drop-in for any `RateStore` slot (engine `rate:` or the control plane),
+  and neither counts rejected attempts.
 - **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
   naive single-record tampering — but a writer with full store access can
   recompute the chain, and tail deletion alone isn't detectable. Mitigation
   shipped: `checkpointAudit()` signs the head; store checkpoints out of the
   writer's reach and `verifyAuditCheckpoint()` detects deletion/rewrites.
   WORM/append-only storage remains the strongest option.
-- **`agent` binding is advisory, not cryptographic.** The `agent` caveat is a
-  string label; nothing yet ties a mandate to a specific agent *identity* (a
-  SPIFFE/SVID-style key binding is roadmap). Treat it as documentation, not an
-  authentication factor.
+- **The `agent` *caveat* is an advisory label** (a string), but cryptographic
+  agent-identity binding now ships: grant/attenuate with `bindAgent` to require a
+  proof of possession of the agent's key at authorize (SVID-style; see "Binding a
+  mandate to an agent identity"). The agent's private key must be provisioned out
+  of band — Behalf enforces the binding but does not distribute keys.
 
 None of these affect the core security properties (unforgeable, attenuation-only,
 truncation-resistant, offline-verifiable mandates); they are
@@ -430,6 +526,26 @@ durability/scaling/hardening trade-offs.
 
 This implementation has not had an independent cryptographic audit — commission
 one before any 1.0 / production positioning.
+
+## Publishing
+
+Releases are cut by `.github/workflows/release.yml` on a `v*` tag (every other
+run is a safe dry-run). Both packages publish as **`agent-authority`**.
+
+- **PyPI — Trusted Publishing (no token).** On PyPI, add a *pending publisher*
+  (Account → Publishing): PyPI project `agent-authority`, owner `novaai0401-ui`,
+  repository `agent-authority`, workflow `release.yml`. This authorizes the first
+  publish of a brand-new project over OIDC — no `PYPI_TOKEN` secret, nothing to
+  leak or rotate.
+- **npm.** Add an automation `NPM_TOKEN` as a repository secret
+  (Settings → Secrets and variables → Actions); the workflow publishes with npm
+  provenance.
+
+Then:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0   # triggers the gated publish of both
+```
 
 ## License
 

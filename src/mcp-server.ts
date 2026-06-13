@@ -54,7 +54,7 @@ export function createMcpServer(engine: Behalf = Behalf.default): McpServer {
         return ok({
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: {} },
-          serverInfo: { name: "behalf", version: "0.1.0" },
+          serverInfo: { name: "agent-authority", version: "0.1.0" },
         });
 
       case "notifications/initialized":
@@ -119,7 +119,7 @@ export function createMcpServer(engine: Behalf = Behalf.default): McpServer {
   return { dispatch, start };
 }
 
-// Allow `node dist/mcp-server.js` (and the `behalf-mcp` bin) to run the server,
+// Allow `node dist/mcp-server.js` (and the `agent-authority-mcp` bin) to run the server,
 // while never auto-starting when imported (e.g. by tests). Compares real paths
 // so an npm bin symlink still resolves to this module.
 function runningAsMain(): boolean {

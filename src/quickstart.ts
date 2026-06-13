@@ -31,11 +31,11 @@ export interface Surface {
 }
 
 export interface QuickstartOptions {
-  /** Server name shown in the client config. Default "behalf". */
+  /** Server name shown in the client config. Default "agent-authority". */
   name?: string;
   /** Command to launch the MCP server. Default "npx". */
   command?: string;
-  /** Args for the command. Default ["-y", "behalf-mcp"]. */
+  /** Args for the command. Default ["-y", "agent-authority-mcp"]. */
   args?: string[];
   /** Extra environment variables for the server entry. */
   env?: Record<string, string>;
@@ -137,9 +137,9 @@ export const DEFAULT_SURFACES: Surface[] = [
 ];
 
 const DEFAULTS: Required<Omit<QuickstartOptions, "env">> = {
-  name: "behalf",
+  name: "agent-authority",
   command: "npx",
-  args: ["-y", "behalf-mcp"],
+  args: ["-y", "agent-authority-mcp"],
 };
 
 /** Look up a built-in (or supplied) surface by id. */

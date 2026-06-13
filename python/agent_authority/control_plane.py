@@ -348,7 +348,7 @@ class ControlPlane:
 
 
 def main() -> None:
-    """Run a durable, file-backed control plane (the behalf-control-plane bin).
+    """Run a durable, file-backed control plane (the agent-authority-control-plane bin).
 
     PORT and BEHALF_HOME are read from the environment; blocks until interrupted.
     """
@@ -375,7 +375,7 @@ def main() -> None:
         token=os.environ.get("BEHALF_TOKEN"),
     )
     bound = cp.listen(port)
-    print(f"behalf control plane listening on http://127.0.0.1:{bound}  (dashboard at /)", file=__import__("sys").stderr)
+    print(f"agent-authority control plane listening on http://127.0.0.1:{bound}  (dashboard at /)", file=__import__("sys").stderr)
     try:
         while True:
             _time.sleep(3600)

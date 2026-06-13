@@ -6,12 +6,12 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.audit import verify  # noqa: E402
-from behalf.capability import is_narrowing, parse, permits  # noqa: E402
-from behalf.errors import AuthorizationError, IntegrityError, WideningError  # noqa: E402
-from behalf.lint import is_clean, lint  # noqa: E402
-from behalf.mcp import behalf_mcp_tools, with_behalf  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.audit import verify  # noqa: E402
+from agent_authority.capability import is_narrowing, parse, permits  # noqa: E402
+from agent_authority.errors import AuthorizationError, IntegrityError, WideningError  # noqa: E402
+from agent_authority.lint import is_clean, lint  # noqa: E402
+from agent_authority.mcp import behalf_mcp_tools, with_behalf  # noqa: E402
 
 
 class CapabilityTests(unittest.TestCase):
@@ -285,7 +285,7 @@ class CachingRevocationTests(unittest.TestCase):
         return Inner(), calls, revoked
 
     def test_not_revoked_cached_within_ttl(self):
-        from behalf.store import CachingRevocationStore
+        from agent_authority.store import CachingRevocationStore
 
         clock = {"t": 0}
         inner, calls, _ = self._counting_inner()
@@ -298,7 +298,7 @@ class CachingRevocationTests(unittest.TestCase):
         self.assertEqual(calls["is_revoked"], 2)
 
     def test_revoked_cached_permanently(self):
-        from behalf.store import CachingRevocationStore
+        from agent_authority.store import CachingRevocationStore
 
         inner, calls, revoked = self._counting_inner({"bad"})
         cache = CachingRevocationStore(inner, ttl_ms=1000)
@@ -307,7 +307,7 @@ class CachingRevocationTests(unittest.TestCase):
         self.assertEqual(calls["is_revoked"], 1)
 
     def test_revoke_write_through_and_invalidate(self):
-        from behalf.store import CachingRevocationStore
+        from agent_authority.store import CachingRevocationStore
 
         inner, calls, _ = self._counting_inner()
         cache = CachingRevocationStore(inner, ttl_ms=60000)

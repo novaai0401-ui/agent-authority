@@ -9,8 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf.mcp_server import create_mcp_server  # noqa: E402
-from behalf.quickstart import find_surface, generate_quickstart, list_surfaces  # noqa: E402
+from agent_authority.mcp_server import create_mcp_server  # noqa: E402
+from agent_authority.quickstart import find_surface, generate_quickstart, list_surfaces  # noqa: E402
 
 PKG_DIR = os.path.join(os.path.dirname(__file__), "..")
 
@@ -24,12 +24,12 @@ class QuickstartTests(unittest.TestCase):
     def test_mcp_surface_renders_config(self):
         qs = generate_quickstart(find_surface("claude-code"), command="node", args=["dist/mcp-server.js"])
         cfg = json.loads(qs["snippet"])
-        self.assertEqual(cfg["mcpServers"]["behalf"], {"command": "node", "args": ["dist/mcp-server.js"]})
-        self.assertIn("claude mcp add behalf -- node dist/mcp-server.js", qs["cli"])
+        self.assertEqual(cfg["mcpServers"]["agent-authority"], {"command": "node", "args": ["dist/mcp-server.js"]})
+        self.assertIn("claude mcp add agent-authority -- node dist/mcp-server.js", qs["cli"])
 
     def test_copilot_uses_servers_key_and_stdio(self):
         cfg = json.loads(generate_quickstart(find_surface("copilot"))["snippet"])
-        self.assertEqual(cfg["servers"]["behalf"]["type"], "stdio")
+        self.assertEqual(cfg["servers"]["agent-authority"]["type"], "stdio")
 
     def test_gpt_function_tools(self):
         cfg = json.loads(generate_quickstart(find_surface("gpt"))["snippet"])
@@ -45,7 +45,7 @@ class McpServerTests(unittest.TestCase):
     def test_initialize_and_tools(self):
         s = create_mcp_server()
         init = s.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
-        self.assertEqual(init["result"]["serverInfo"]["name"], "behalf")
+        self.assertEqual(init["result"]["serverInfo"]["name"], "agent-authority")
         self.assertIsNone(s.dispatch({"jsonrpc": "2.0", "method": "notifications/initialized"}))
         tools = s.dispatch({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
         self.assertEqual(
@@ -77,7 +77,7 @@ class CliTests(unittest.TestCase):
     def _run(self, *args, home):
         env = {**os.environ, "BEHALF_HOME": home, "PYTHONPATH": PKG_DIR}
         return subprocess.run(
-            [sys.executable, "-m", "behalf.cli", *args],
+            [sys.executable, "-m", "agent_authority.cli", *args],
             cwd=PKG_DIR, env=env, capture_output=True, text=True,
         )
 

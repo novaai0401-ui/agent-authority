@@ -30,6 +30,7 @@ import {
   type RateStore,
 } from "./store.js";
 import { Mandate, type Engine } from "./mandate.js";
+import { unseal, type SealKeyPair } from "./seal.js";
 import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
 import type {
   AttenuateOptions,
@@ -47,6 +48,13 @@ import type { KeyObject } from "node:crypto";
 export interface BehalfConfig {
   /** Issuer keypair. Auto-generated if omitted (so the engine can grant). */
   rootKeyPair?: KeyPair;
+  /**
+   * This engine's agent-identity keypair (SVID-style). When set, in-process
+   * `authorize` automatically proves possession of it, satisfying any
+   * `agentKey` caveat bound to `agentPublicKey`. Distribute `agentPublicKey`
+   * to whoever grants you a mandate so they can bind it.
+   */
+  agentKey?: KeyPair;
   /** Additional trusted issuer public keys (base64url SPKI) for foreign mandates. */
   trust?: string[];
   revocations?: RevocationStore;
@@ -85,6 +93,7 @@ function toMs(d: string | number): number {
  */
 export class Behalf implements Engine {
   private readonly rootKeyPair: KeyPair;
+  private readonly agentKey?: KeyPair;
   private readonly trusted: Set<string>;
   private readonly revocations: RevocationStore;
   private readonly auditStore: AuditStore;
@@ -97,6 +106,7 @@ export class Behalf implements Engine {
 
   constructor(config: BehalfConfig = {}) {
     this.rootKeyPair = config.rootKeyPair ?? newKeyPair();
+    this.agentKey = config.agentKey;
     this.trusted = new Set(config.trust ?? []);
     this.trusted.add(exportPublicKey(this.rootKeyPair.publicKey));
     this.revocations = config.revocations ?? new MemoryRevocationStore();
@@ -123,6 +133,15 @@ export class Behalf implements Engine {
     return exportPublicKey(this.rootKeyPair.publicKey);
   }
 
+  /**
+   * This engine's agent-identity public key (base64url), or undefined if none is
+   * configured. Hand it to a granter so they can `bindAgent` a mandate to you;
+   * only an engine holding the matching private key can then authorize it.
+   */
+  get agentPublicKey(): string | undefined {
+    return this.agentKey ? exportPublicKey(this.agentKey.publicKey) : undefined;
+  }
+
   /** GRANT — a principal authorizes an agent: scoped, capped, short-lived. */
   grant(opts: GrantOptions): Mandate {
     const id = newId();
@@ -133,6 +152,7 @@ export class Behalf implements Engine {
         { t: "agent", agent: opts.agent },
         { t: "cap", can: opts.can },
         { t: "expires", at: this.now() + toMs(opts.expiresIn) },
+        ...(opts.bindAgent ? [{ t: "agentKey", key: opts.bindAgent } as Caveat] : []),
       ],
       nextPub: exportPublicKey(next.publicKey),
     };
@@ -171,6 +191,9 @@ export class Behalf implements Engine {
     if (opts.agent) {
       caveats.push({ t: "agent", agent: opts.agent });
     }
+    if (opts.bindAgent) {
+      caveats.push({ t: "agentKey", key: opts.bindAgent });
+    }
     // A fresh id makes this link individually revocable; it stays downstream of
     // the parent, so revoking the parent still kills it.
     caveats.push({ t: "id", id: newId() });
@@ -199,12 +222,17 @@ export class Behalf implements Engine {
     delegationKey: KeyObject,
     action: string,
     nonce?: string,
+    agentKeys?: KeyObject[],
   ): Proof {
     const ts = this.now();
+    const agentSigs = (agentKeys ?? []).map((k) =>
+      signProof(k, token.id, token.sigs, ts, action, nonce ?? ""),
+    );
     return {
       ts,
       sig: signProof(delegationKey, token.id, token.sigs, ts, action, nonce ?? ""),
       ...(nonce !== undefined ? { nonce } : {}),
+      ...(agentSigs.length ? { agentSigs } : {}),
     };
   }
 
@@ -217,7 +245,14 @@ export class Behalf implements Engine {
     if (!delegationKey) throw new BehalfDelegationError();
     // In-process the engine is its own verifier, so it can self-issue a nonce.
     const nonce = this.requireNonce ? this.challenge() : undefined;
-    return this.authorize(token, action, this.provePossession(token, delegationKey, action, nonce));
+    // If this engine carries an agent identity, prove it too, satisfying any
+    // agentKey caveat bound to us.
+    const agentKeys = this.agentKey ? [this.agentKey.privateKey] : [];
+    return this.authorize(
+      token,
+      action,
+      this.provePossession(token, delegationKey, action, nonce, agentKeys),
+    );
   }
 
   /**
@@ -226,7 +261,7 @@ export class Behalf implements Engine {
    * binds the presenter to the exact (untruncated) chain and a fresh timestamp,
    * which is what closes trailing-block truncation and stops a serialized token
    * from being a reusable bearer credential. Produce one with `provePossession`
-   * (or, across the wire, `behalf/a2a`'s `present`).
+   * (or, across the wire, `agent-authority/a2a`'s `present`).
    */
   async authorize(token: MandateToken, action: string, proof?: Proof): Promise<void> {
     const chain = chainIds(token);
@@ -266,6 +301,20 @@ export class Behalf implements Engine {
     const terminal = importPublicKey(token.blocks[token.blocks.length - 1].nextPub);
     if (!verifyProof(terminal, token.id, token.sigs, proof.ts, action, proof.sig, proof.nonce ?? "")) {
       return deny("invalid possession proof");
+    }
+    // 2c. Conjunctive agent-identity binding (C3, SVID-style). Every agentKey
+    // caveat in the chain must be satisfied by an agent signature over the same
+    // proof message. A credential thief lacks these private keys and cannot
+    // strip a signed caveat, so the binding cannot be bypassed; appending one's
+    // own binding only adds a further requirement, never removes the original.
+    const agentSigs = proof.agentSigs ?? [];
+    for (const c of allCaveats(token)) {
+      if (c.t !== "agentKey") continue;
+      const agentPub = importPublicKey(c.key);
+      const satisfied = agentSigs.some((s) =>
+        verifyProof(agentPub, token.id, token.sigs, proof.ts, action, s, proof.nonce ?? ""),
+      );
+      if (!satisfied) return deny("agent identity proof required");
     }
 
     // 3. Revocation + expiry + scope (shared with inspect()).
@@ -413,6 +462,7 @@ export class Behalf implements Engine {
   rotate(): Behalf {
     return new Behalf({
       rootKeyPair: newKeyPair(),
+      agentKey: this.agentKey,
       trust: [...this.trusted],
       revocations: this.revocations,
       audit: this.auditStore,
@@ -459,6 +509,15 @@ export class Behalf implements Engine {
       return new Mandate(token, this, importPrivateKey(parsed.key, pub));
     }
     return new Mandate(parsed as MandateToken, this);
+  }
+
+  /**
+   * Decrypt and import a sealed holder credential (see
+   * `mandate.sealForRecipient`) using the recipient's X25519 sealing keypair.
+   * Equivalent to `import(unseal(sealed, recipient))`.
+   */
+  importSealed(sealed: string, recipient: SealKeyPair): Mandate {
+    return this.import(unseal(sealed, recipient));
   }
 
   /**

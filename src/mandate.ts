@@ -1,5 +1,6 @@
 import type { AttenuateOptions, AuditEntry, Caveat, MandateToken, Proof } from "./types.js";
-import { exportPrivateKey } from "./crypto.js";
+import { exportPrivateKey, type KeyPair } from "./crypto.js";
+import { seal } from "./seal.js";
 import type { KeyObject } from "node:crypto";
 
 /**
@@ -13,7 +14,13 @@ export interface Engine {
     delegationKey: KeyObject | undefined,
   ): Promise<void>;
   attenuate(token: MandateToken, delegationKey: KeyObject | undefined, opts: AttenuateOptions): Mandate;
-  provePossession(token: MandateToken, delegationKey: KeyObject, action: string, nonce?: string): Proof;
+  provePossession(
+    token: MandateToken,
+    delegationKey: KeyObject,
+    action: string,
+    nonce?: string,
+    agentKeys?: KeyObject[],
+  ): Proof;
   revoke(id: string): Promise<void>;
   audit(id: string): Promise<AuditEntry[]>;
 }
@@ -90,7 +97,7 @@ export class Mandate {
    * possession of the chain's terminal key, which closes truncation and makes a
    * serialized token unusable as a bare bearer credential. To authorize a
    * mandate you received from elsewhere, the holder must present a proof — see
-   * `behalf/a2a`, or use `engine.inspect()` for an advisory (no-possession)
+   * `agent-authority/a2a`, or use `engine.inspect()` for an advisory (no-possession)
    * check.
    */
   authorize(action: string): Promise<void> {
@@ -108,11 +115,12 @@ export class Mandate {
    * the exact chain. Requires the delegation key, so only the legitimate holder
    * can produce it.
    */
-  prove(action: string, opts: { nonce?: string } = {}): Proof {
+  prove(action: string, opts: { nonce?: string; agentKeys?: KeyPair[] } = {}): Proof {
     if (!this.delegationKey) {
       throw new Error("cannot prove possession: this mandate was imported without its key");
     }
-    return this.engine.provePossession(this.token, this.delegationKey, action, opts.nonce);
+    const agentKeys = opts.agentKeys?.map((k) => k.privateKey);
+    return this.engine.provePossession(this.token, this.delegationKey, action, opts.nonce, agentKeys);
   }
 
   /** Revoke this mandate and its entire downstream chain. */
@@ -145,5 +153,16 @@ export class Mandate {
     }
     const payload = { token: this.token, key: exportPrivateKey(this.delegationKey) };
     return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  }
+
+  /**
+   * Holder credential, encrypted to a recipient's X25519 sealing key — so the
+   * credential is unreadable in transit/at rest to anyone but the intended
+   * agent. Open it with `engine.importSealed(sealed, recipientKeyPair)`. This is
+   * `serializeWithKey()` wrapped in `seal()`; use it when the delivery channel
+   * isn't fully trusted. (Defense-in-depth on top of `bindAgent`.)
+   */
+  sealForRecipient(recipientPublicKey: string): string {
+    return seal(this.serializeWithKey(), recipientPublicKey);
   }
 }

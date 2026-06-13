@@ -13,17 +13,17 @@ GPT are built in — and **any other AI is configurable** via a custom surface o
 the generic MCP template.
 
 ```bash
-behalf quickstart --list              # every built-in surface
-behalf quickstart claude-code         # print the config to paste
-behalf quickstart copilot
-behalf quickstart gpt                 # OpenAI function tools
-behalf quickstart gemini              # Gemini functionDeclarations
+agent-authority quickstart --list              # every built-in surface
+agent-authority quickstart claude-code         # print the config to paste
+agent-authority quickstart copilot
+agent-authority quickstart gpt                 # OpenAI function tools
+agent-authority quickstart gemini              # Gemini functionDeclarations
 
 # customise the launch command / name / env
-behalf quickstart cursor --local                      # node dist/mcp-server.js
-behalf quickstart cursor --command npx --arg -y --arg behalf-mcp
-behalf quickstart claude-code --name auth --env BEHALF_HOME=/data/behalf
-behalf quickstart <surface> --format json             # machine-readable
+agent-authority quickstart cursor --local                      # node dist/mcp-server.js
+agent-authority quickstart cursor --command npx --arg -y --arg agent-authority-mcp
+agent-authority quickstart claude-code --name auth --env BEHALF_HOME=/data/behalf
+agent-authority quickstart <surface> --format json             # machine-readable
 ```
 
 ## The three mains
@@ -31,30 +31,30 @@ behalf quickstart <surface> --format json             # machine-readable
 ### Claude Code
 
 ```bash
-claude mcp add behalf -- npx -y behalf-mcp
+claude mcp add agent-authority -- npx -y agent-authority-mcp
 ```
 
 or `.mcp.json` / `~/.claude.json`:
 
 ```json
-{ "mcpServers": { "behalf": { "command": "npx", "args": ["-y", "behalf-mcp"] } } }
+{ "mcpServers": { "agent-authority": { "command": "npx", "args": ["-y", "agent-authority-mcp"] } } }
 ```
 
 ### Cursor — `.cursor/mcp.json`
 
 ```json
-{ "mcpServers": { "behalf": { "command": "npx", "args": ["-y", "behalf-mcp"] } } }
+{ "mcpServers": { "agent-authority": { "command": "npx", "args": ["-y", "agent-authority-mcp"] } } }
 ```
 
 ### GitHub Copilot (VS Code) — `.vscode/mcp.json`
 
 ```json
-{ "servers": { "behalf": { "command": "npx", "args": ["-y", "behalf-mcp"], "type": "stdio" } } }
+{ "servers": { "agent-authority": { "command": "npx", "args": ["-y", "agent-authority-mcp"], "type": "stdio" } } }
 ```
 
 ## GPT and Gemini (and any function-calling model)
 
-`behalf quickstart gpt` / `behalf quickstart gemini` emit the three discovery
+`agent-authority quickstart gpt` / `agent-authority quickstart gemini` emit the three discovery
 tools — `request_mandate`, `present_mandate`, `check_authority` — as OpenAI
 `tools` or Gemini `functionDeclarations`. Have the model call `check_authority`
 before any sensitive action, then enforce with `mandate.authorize(...)` server-side.
@@ -77,15 +77,15 @@ Every surface is just data. Describe a new one in JSON and pass it with
 ```
 
 ```bash
-behalf quickstart my-agent --surfaces ./surfaces.json
+agent-authority quickstart my-agent --surfaces ./surfaces.json
 ```
 
-For an MCP client whose config you don't know yet, `behalf quickstart
+For an MCP client whose config you don't know yet, `agent-authority quickstart
 generic-mcp` prints the near-universal `mcpServers` stdio form. Programmatic use
 mirrors the CLI:
 
 ```ts
-import { generateQuickstart, findSurface } from "behalf";
-const qs = generateQuickstart(findSurface("cursor")!, { command: "npx", args: ["-y", "behalf-mcp"] });
+import { generateQuickstart, findSurface } from "agent-authority";
+const qs = generateQuickstart(findSurface("cursor")!, { command: "npx", args: ["-y", "agent-authority-mcp"] });
 console.log(qs.snippet); // the JSON to paste
 ```

@@ -41,7 +41,7 @@ DEFAULT_SURFACES: list[dict] = [
      "notes": "Most MCP clients accept a `mcpServers` map of stdio servers."},
 ]
 
-_DEFAULTS = {"name": "behalf", "command": "npx", "args": ["-y", "behalf-mcp"]}
+_DEFAULTS = {"name": "agent-authority", "command": "npx", "args": ["-y", "agent-authority-mcp"]}
 
 
 def find_surface(id: str, extra: Optional[list[dict]] = None) -> Optional[dict]:

@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from behalf import create_behalf  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
 
 
 def main() -> None:
@@ -29,6 +29,10 @@ def main() -> None:
         json.dumps(
             {
                 "mandate": mandate.serialize(),
+                # Holder credential (token + delegation key) so the other port can
+                # import it and attenuate further — exercises cross-language
+                # delegation, not just verification.
+                "cred": mandate.serialize_with_key(),
                 "pubkey": issuer.public_key,
                 "proofs": {a: mandate.prove(a) for a in actions},
             }

@@ -21,7 +21,7 @@ import {
 } from "./quickstart.js";
 
 /**
- * `behalf` CLI — grant, inspect, authorize, revoke, and audit mandates from the
+ * `agent-authority` CLI — grant, inspect, authorize, revoke, and audit mandates from the
  * terminal. State (issuer keypair, revocation list, audit log) lives under
  * $BEHALF_HOME (default ~/.behalf), so mandates issued in one invocation can be
  * checked and revoked in the next.
@@ -80,18 +80,18 @@ function asArray(v: string | string[] | undefined): string[] {
   return Array.isArray(v) ? v : [v];
 }
 
-const USAGE = `behalf — agent authority CLI
+const USAGE = `agent-authority — agent authority CLI
 
 Usage:
-  behalf pubkey
-  behalf grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
-  behalf inspect <mandate>
-  behalf authorize <mandate> <action>
-  behalf revoke <mandate-id>
-  behalf audit <mandate-id>
-  behalf lint <cap> [<cap> ...]
-  behalf quickstart <surface>   (e.g. claude-code, cursor, copilot, gpt, gemini)
-  behalf quickstart --list      (list every surface; any AI is configurable)
+  agent-authority pubkey
+  agent-authority grant --principal <id> --agent <id> --can <cap> [--can <cap> ...] --expires <dur>
+  agent-authority inspect <mandate>
+  agent-authority authorize <mandate> <action>
+  agent-authority revoke <mandate-id>
+  agent-authority audit <mandate-id>
+  agent-authority lint <cap> [<cap> ...]
+  agent-authority quickstart <surface>   (e.g. claude-code, cursor, copilot, gpt, gemini)
+  agent-authority quickstart --list      (list every surface; any AI is configurable)
 
 State dir: ${HOME}  (override with $BEHALF_HOME)`;
 
@@ -120,12 +120,12 @@ function runStateless(cmd: string, args: { _: string[]; [k: string]: string | st
   }
   const id = args._[0];
   if (!id) {
-    console.error("quickstart requires a surface id, or --list. e.g. behalf quickstart claude-code");
+    console.error("quickstart requires a surface id, or --list. e.g. agent-authority quickstart claude-code");
     return 2;
   }
   const surface = findSurface(id, extra);
   if (!surface) {
-    console.error(`unknown surface "${id}". Run: behalf quickstart --list`);
+    console.error(`unknown surface "${id}". Run: agent-authority quickstart --list`);
     return 2;
   }
   const command = args.local !== undefined ? "node" : (args.command as string) ?? undefined;
