@@ -9,9 +9,9 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
-from behalf.store import MemoryRateStore, TokenBucketRateStore  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
+from agent_authority.store import MemoryRateStore, TokenBucketRateStore  # noqa: E402
 
 
 class TokenBucketTests(unittest.TestCase):

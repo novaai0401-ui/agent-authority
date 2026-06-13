@@ -11,8 +11,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import _ed25519, crypto  # noqa: E402
-from behalf._backend import is_constant_time  # noqa: E402
+from agent_authority import _ed25519, crypto  # noqa: E402
+from agent_authority._backend import is_constant_time  # noqa: E402
 
 
 class BackendTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class BackendTests(unittest.TestCase):
     def test_interoperates_with_reference(self):
         # A signature from the active backend must verify under the pure-Python
         # reference, and vice versa — proving byte-for-byte compatibility.
-        from behalf.crypto import _b64, _unb64
+        from agent_authority.crypto import _b64, _unb64
 
         kp = crypto.new_key_pair()
         seed = _unb64(kp.private)

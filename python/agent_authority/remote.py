@@ -1,4 +1,4 @@
-"""Client stores backed by a remote control plane (mirrors TS behalf/remote).
+"""Client stores backed by a remote control plane (mirrors TS agent-authority/remote).
 
 Drop them into ``create_behalf(revocations=..., audit=...)`` and revocation
 propagates across every agent pointed at the same control plane, while audit is

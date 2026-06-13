@@ -12,8 +12,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.seal import (  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.seal import (  # noqa: E402
     SealUnavailableError,
     new_seal_key_pair,
     seal,

@@ -97,7 +97,7 @@ export class Mandate {
    * possession of the chain's terminal key, which closes truncation and makes a
    * serialized token unusable as a bare bearer credential. To authorize a
    * mandate you received from elsewhere, the holder must present a proof — see
-   * `behalf/a2a`, or use `engine.inspect()` for an advisory (no-possession)
+   * `agent-authority/a2a`, or use `engine.inspect()` for an advisory (no-possession)
    * check.
    */
   authorize(action: string): Promise<void> {

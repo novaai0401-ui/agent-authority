@@ -10,11 +10,11 @@ import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.control_plane import create_control_plane  # noqa: E402
-from behalf.crypto import new_key_pair  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
-from behalf.remote import ControlPlaneClient, HttpRateStore, HttpRevocationStore  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.control_plane import create_control_plane  # noqa: E402
+from agent_authority.crypto import new_key_pair  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
+from agent_authority.remote import ControlPlaneClient, HttpRateStore, HttpRevocationStore  # noqa: E402
 
 
 class NonceTests(unittest.TestCase):
@@ -111,7 +111,7 @@ class ConsentTtlTests(unittest.TestCase):
 
 class PaginationTests(unittest.TestCase):
     def test_audit_limit_offset_total(self):
-        from behalf.remote import HttpAuditStore
+        from agent_authority.remote import HttpAuditStore
 
         cp = create_control_plane()
         port = cp.listen(0)

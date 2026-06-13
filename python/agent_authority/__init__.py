@@ -2,7 +2,7 @@
 
 Five verbs, one primitive (the Mandate):
 
-    from behalf import create_behalf
+    from agent_authority import create_behalf
 
     b = create_behalf()
     mandate = b.grant(                          # 1. GRANT

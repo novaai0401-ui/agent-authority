@@ -10,8 +10,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
 
 VECTOR_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "vectors", "mandate-vector.json")
 with open(VECTOR_PATH, encoding="utf-8") as f:

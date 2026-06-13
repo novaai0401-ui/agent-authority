@@ -3,7 +3,7 @@
  *
  * Five verbs, one primitive (the Mandate):
  *
- *   import { Behalf } from "behalf";
+ *   import { Behalf } from "agent-authority";
  *
  *   const mandate = await Behalf.grant({               // 1. GRANT
  *     principal: user.id,

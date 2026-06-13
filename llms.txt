@@ -11,7 +11,7 @@ which chain of agents. There is exactly one canonical way to do each thing.
 ## The five verbs (TypeScript)
 
 ```ts
-import { Behalf } from "behalf";
+import { Behalf } from "agent-authority";
 
 // 1. GRANT — a principal authorizes an agent: scoped, capped, short-lived
 const mandate = await Behalf.grant({
@@ -39,7 +39,7 @@ Five verbs: grant, authorize, attenuate, revoke, audit. Do not add a sixth.
 ## MCP middleware (secure a whole agent in ~6 lines)
 
 ```ts
-import { withBehalf } from "behalf/mcp";
+import { withBehalf } from "agent-authority/mcp";
 
 const server = withBehalf(myMcpServer, {
   policy: {
@@ -77,7 +77,7 @@ grant's `spend:usd<=50`.
   a usable bearer credential and a holder cannot truncate its chain to regain a
   parent's scope. `mandate.authorize(action)` does this in-process. Across a
   boundary, present `mandate.prove(action)` and verify with
-  `engine.authorize(token, action, proof)` (or use `behalf/a2a`).
+  `engine.authorize(token, action, proof)` (or use `agent-authority/a2a`).
 - For an advisory "would this scope allow X?" check (no possession), use
   `engine.inspect(token, action)`.
 - Verification is offline (signature + scope + expiry + possession), public-key
@@ -86,13 +86,13 @@ grant's `spend:usd<=50`.
 
 ## Discovery tools (MCP)
 
-`behalf/mcp` exposes `request_mandate`, `present_mandate`, and `check_authority`
+`agent-authority/mcp` exposes `request_mandate`, `present_mandate`, and `check_authority`
 (advisory) so any agent can obtain and reason about authority natively. Get them
 via `behalfMcpTools()`, or run the standalone server: `node dist/mcp-server.js`.
 
 ## Quickstarts & schemas
 
-- `behalf quickstart <surface>` wires it into Claude Code, Cursor, Copilot,
+- `agent-authority quickstart <surface>` wires it into Claude Code, Cursor, Copilot,
   Gemini, GPT, or any AI (see QUICKSTART.md).
 - Typed schemas: /schemas/mandate.schema.json, /schemas/capability.schema.json.
 

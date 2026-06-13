@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
 
 
 def main() -> None:

@@ -13,7 +13,7 @@ to [Semantic Versioning](https://semver.org/).
   **truncate** its chain to recover a parent's wider scope. Authorizing now
   requires proving possession of the chain's terminal key: `mandate.authorize()`
   does this in-process; across a boundary the holder presents a proof
-  (`mandate.prove()` / `behalf/a2a`'s `present()`) and the verifier checks it
+  (`mandate.prove()` / `agent-authority/a2a`'s `present()`) and the verifier checks it
   with `engine.authorize(token, action, proof)`. Advisory, no-possession checks
   use the new `engine.inspect(token, action)`.
 - **Attenuation operator direction (fixes M-1).** The narrowing check now
@@ -49,7 +49,7 @@ to [Semantic Versioning](https://semver.org/).
   `verifyAuditCheckpoint()` anchor the log head under the issuer key, making
   tail-deletion and rewrites detectable when checkpoints are stored out of the
   writer's reach.
-- Fixed: `python -m behalf.control_plane` exited immediately (missing
+- Fixed: `python -m agent_authority.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
 - **Sealed holder credentials (#8).** `mandate.sealForRecipient(pub)` encrypts a
   holder credential to a recipient's X25519 sealing key; `engine.importSealed`
@@ -62,7 +62,7 @@ to [Semantic Versioning](https://semver.org/).
   `python/tests/test_seal.py`, and a cross-language interop case.
 - **Optional hardened crypto backend (Python).** The Python port auto-selects a
   constant-time native Ed25519 backend when importable (`cryptography`, then
-  `PyNaCl`), falling back to the pure-Python reference; `behalf.crypto.backend()`
+  `PyNaCl`), falling back to the pure-Python reference; `agent_authority.crypto.backend()`
   reports the active one. The selector self-checks byte-compatibility with the
   reference (and tolerates a broken native lib, including Rust panics, without
   noise) so cross-port tokens stay valid. No new required dependency.
@@ -103,8 +103,8 @@ to [Semantic Versioning](https://semver.org/).
   into the middleware.
 - **Per-issuer audit scoping** and a `tenantScoped` control-plane mode.
 - **`CachingRevocationStore`** — bounded-staleness revocation cache.
-- **Tooling.** `behalf` CLI (grant/inspect/authorize/revoke/audit/lint/
-  quickstart), `behalf-mcp` and `behalf-control-plane` binaries, dynamic
+- **Tooling.** `agent-authority` CLI (grant/inspect/authorize/revoke/audit/lint/
+  quickstart), `agent-authority-mcp` and `agent-authority-control-plane` binaries, dynamic
   per-surface quickstarts for any AI, `llms.txt`, and JSON schemas.
 - **Cross-language wire interop** — a mandate issued in one port verifies in the
   other.

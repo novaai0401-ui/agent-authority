@@ -7,10 +7,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
-from behalf.mcp import behalf_mcp_tools  # noqa: E402
-from behalf.persist import FileRateStore  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
+from agent_authority.mcp import behalf_mcp_tools  # noqa: E402
+from agent_authority.persist import FileRateStore  # noqa: E402
 
 
 class TransferTests(unittest.TestCase):

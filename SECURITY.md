@@ -67,7 +67,7 @@ Guarantees, with the mechanism and the test that pins each one:
 - **Pure-Python Ed25519 is not constant-time** (timing side-channels). The
   Python port auto-selects a hardened native backend when importable
   (`cryptography`, then `PyNaCl`) and falls back to the pure-Python reference
-  otherwise; `behalf.crypto.backend()` reports the active one. For
+  otherwise; `agent_authority.crypto.backend()` reports the active one. For
   hostile-adjacency Python, install `cryptography` (or use the Node port). The
   selector self-checks that any native backend is byte-compatible with the
   reference before adopting it, so cross-port tokens stay valid.
@@ -79,7 +79,7 @@ Guarantees, with the mechanism and the test that pins each one:
 
 Priority order for an independent cryptographic review:
 
-1. **Token construction** — `src/crypto.ts` / `python/behalf/crypto.py`:
+1. **Token construction** — `src/crypto.ts` / `python/agent_authority/crypto.py`:
    signature chain, canonicalization, key encoding (raw Ed25519, base64url).
 2. **Proof of possession** — message construction (`behalf-pop\n{id}\n{sigs,}\n{ts}\n{action}\n{nonce}`),
    freshness/skew handling, nonce lifecycle.
@@ -89,7 +89,7 @@ Priority order for an independent cryptographic review:
    `amountNarrows`, resource-prefix coverage (`resourceCovers`).
 5. **Control-plane auth** — tenant token resolution and namespacing
    (`src/control-plane.ts route()`).
-6. The pure-Python Ed25519 (`python/behalf/_ed25519.py`) — correctness only;
+6. The pure-Python Ed25519 (`python/agent_authority/_ed25519.py`) — correctness only;
    it is documented as non-constant-time.
 
 Cross-language verifiers should validate against

@@ -1,5 +1,5 @@
 {
-  "name": "behalf",
+  "name": "agent-authority",
   "version": "0.1.0",
   "description": "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs.",
   "type": "module",
@@ -37,9 +37,9 @@
     "CHANGELOG.md"
   ],
   "bin": {
-    "behalf": "./dist/cli.js",
-    "behalf-mcp": "./dist/mcp-server.js",
-    "behalf-control-plane": "./dist/control-plane.js"
+    "agent-authority": "./dist/cli.js",
+    "agent-authority-mcp": "./dist/mcp-server.js",
+    "agent-authority-control-plane": "./dist/control-plane.js"
   },
   "exports": {
     ".": {

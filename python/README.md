@@ -1,4 +1,4 @@
-# behalf (Python)
+# agent-authority (Python)
 
 The Python port of [Behalf](../README.md) — the reference implementation of
 agent authority. Identical API shape to the TypeScript library, zero
@@ -7,7 +7,7 @@ dependencies (standard library only).
 ## The five verbs
 
 ```python
-from behalf import create_behalf
+from agent_authority import create_behalf
 
 b = create_behalf()
 
@@ -35,7 +35,7 @@ trail = b.audit(mandate.id)
 ## MCP / A2A middleware
 
 ```python
-from behalf.mcp import with_behalf
+from agent_authority.mcp import with_behalf
 
 server = with_behalf(
     my_tool_server,  # exposes call_tool(name, args, ctx=None)
@@ -51,7 +51,7 @@ server = with_behalf(
 server.call_tool("read_calendar", {}, {"mandate": mandate})
 ```
 
-`behalf.mcp.behalf_mcp_tools()` returns the three discovery tools
+`agent_authority.mcp.behalf_mcp_tools()` returns the three discovery tools
 (`request_mandate`, `present_mandate`, `check_authority`).
 
 ## Develop

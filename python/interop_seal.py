@@ -25,7 +25,7 @@ def main() -> None:
 
     if cmd == "avail":
         try:
-            from behalf import new_seal_key_pair
+            from agent_authority import new_seal_key_pair
 
             new_seal_key_pair()
             print("yes")
@@ -33,8 +33,8 @@ def main() -> None:
             print("no")
         return
 
-    from behalf import create_behalf, new_seal_key_pair
-    from behalf.seal import SealKeyPair
+    from agent_authority import create_behalf, new_seal_key_pair
+    from agent_authority.seal import SealKeyPair
 
     if cmd == "keypair":
         kp = new_seal_key_pair()

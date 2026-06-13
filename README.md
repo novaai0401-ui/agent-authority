@@ -17,7 +17,7 @@ through which chain of agents.*
 ## Secure an entire agent in ~6 lines
 
 ```ts
-import { withBehalf } from "behalf/mcp";
+import { withBehalf } from "agent-authority/mcp";
 
 const server = withBehalf(myMcpServer, {
   policy: {
@@ -36,7 +36,7 @@ per-tool code.
 ## The five verbs
 
 ```ts
-import { Behalf } from "behalf";
+import { Behalf } from "agent-authority";
 
 // 1. GRANT — a user authorizes an agent: scoped, capped, short-lived
 const mandate = await Behalf.grant({
@@ -130,7 +130,7 @@ await verifier.authorize(mandate.token, "spend:usd=20", mandate.prove("spend:usd
 
 For an advisory "would this token's scope allow X?" check that does **not** prove
 possession (e.g. tooling/dashboards), use `engine.inspect(token, action)`. Over
-HTTP, `behalf/a2a`'s `present()` attaches the proof automatically.
+HTTP, `agent-authority/a2a`'s `present()` attaches the proof automatically.
 
 Proofs are bound to the action and fresh within `proofSkewMs` (default 5 min).
 For **true single-use anti-replay**, the verifier issues a challenge:
@@ -191,7 +191,7 @@ delivery channel itself, **seal** the credential to the recipient so it's
 unreadable to anyone in between:
 
 ```ts
-import { newSealKeyPair } from "behalf";
+import { newSealKeyPair } from "agent-authority";
 
 const recipient = newSealKeyPair();          // recipient's X25519 sealing key
 // ...recipient publishes recipient.publicKey...
@@ -266,7 +266,7 @@ npm run example:control-plane   # revocation propagation across agents
 
 ### CLI
 
-After `npm run build`, the `behalf` CLI manages mandates from the terminal
+After `npm run build`, the `agent-authority` CLI manages mandates from the terminal
 (state lives under `$BEHALF_HOME`, default `~/.behalf`):
 
 ```bash
@@ -292,31 +292,31 @@ node dist/mcp-server.js      # speaks JSON-RPC 2.0 over stdio
 
 ```jsonc
 // register with an MCP client, e.g.:
-{ "mcpServers": { "behalf": { "command": "node", "args": ["dist/mcp-server.js"] } } }
+{ "mcpServers": { "agent-authority": { "command": "node", "args": ["dist/mcp-server.js"] } } }
 ```
 
 ### Quickstarts for any AI
 
-`behalf quickstart` generates the wiring for any surface — Claude Code, Cursor,
+`agent-authority quickstart` generates the wiring for any surface — Claude Code, Cursor,
 Copilot, Windsurf, Gemini CLI, OpenAI Agents (MCP), and GPT / Gemini APIs
 (function tools). Any other AI is configurable via a custom surface file or the
 generic MCP template. See [QUICKSTART.md](./QUICKSTART.md).
 
 ```bash
-behalf quickstart --list
-behalf quickstart claude-code
-behalf quickstart gpt           # OpenAI function tools
-behalf quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
+agent-authority quickstart --list
+agent-authority quickstart claude-code
+agent-authority quickstart gpt           # OpenAI function tools
+agent-authority quickstart my-agent --surfaces ./surfaces.json   # bring your own AI
 ```
 
 ### A2A — agent-to-agent over HTTP
 
-`behalf/a2a` carries a verifiable delegation chain across the network. The caller
+`agent-authority/a2a` carries a verifiable delegation chain across the network. The caller
 attaches its mandate (optionally attenuating it first); the callee verifies the
 chain offline with only the issuer's public key, then authorizes the action:
 
 ```ts
-import { behalfFetch, guard } from "behalf/a2a";
+import { behalfFetch, guard } from "agent-authority/a2a";
 
 // callee: a node:http middleware that authorizes each request
 const gate = guard({ engine: callee, capability: () => "spend:usd<=50" });
@@ -333,11 +333,11 @@ await behalfFetch(url, mandate, { method: "POST" },
 agents and humans write tight capabilities by default:
 
 ```ts
-import { lint } from "behalf";
+import { lint } from "agent-authority";
 lint(["spend:usd", "*"]); // → warnings: add a limit; avoid wildcard
 ```
 
-Also available as `behalf lint <cap> ...` on the CLI.
+Also available as `agent-authority lint <cap> ...` on the CLI.
 
 ### Persistence
 
@@ -345,7 +345,7 @@ Also available as `behalf lint <cap> ...` on the CLI.
 restarts with zero infrastructure:
 
 ```ts
-import { createBehalf, FileRevocationStore, FileAuditStore } from "behalf";
+import { createBehalf, FileRevocationStore, FileAuditStore } from "agent-authority";
 const behalf = createBehalf({
   revocations: new FileRevocationStore("./revocations.json"),
   audit: new FileAuditStore("./audit.jsonl"),
@@ -358,16 +358,16 @@ For multi-agent deployments, the control plane centralizes revocation (revoke
 once, every agent sees it), retains one hash-chained audit log (integrity-
 chained; see Limitations for its threat model), and offers a
 consent/policy surface with a dashboard at `/`. It's a thin HTTP service over the
-same stores — point agents at it with the `behalf/remote` client stores and the
+same stores — point agents at it with the `agent-authority/remote` client stores and the
 five-verb API is unchanged.
 
 ```bash
-node dist/control-plane.js     # bin: behalf-control-plane; dashboard at /
+node dist/control-plane.js     # bin: agent-authority-control-plane; dashboard at /
 ```
 
 ```ts
-import { createBehalf } from "behalf";
-import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "behalf/remote";
+import { createBehalf } from "agent-authority";
+import { HttpRevocationStore, HttpAuditStore, HttpRateStore } from "agent-authority/remote";
 
 const behalf = createBehalf({
   revocations: new HttpRevocationStore("http://localhost:8787"),
@@ -381,7 +381,7 @@ const behalf = createBehalf({
 // tenant token reads/writes only its own issuer's audit; `token` is admin.
 
 // Optional: cache revocation checks with a bounded staleness window.
-// import { CachingRevocationStore } from "behalf";
+// import { CachingRevocationStore } from "agent-authority";
 // revocations: new CachingRevocationStore(new HttpRevocationStore(url), { ttlMs: 5000 })
 ```
 
@@ -409,7 +409,7 @@ python3 -m unittest discover -s tests   # 85 tests, zero dependencies
 ```
 
 ```python
-from behalf import create_behalf
+from agent_authority import create_behalf
 
 b = create_behalf()
 mandate = b.grant(
@@ -422,9 +422,9 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 ## What ships
 
-- **`behalf`** (npm) — the core TypeScript library, near-zero deps.
-- **`behalf/mcp`** + **`behalf/a2a`** — drop-in enforcement middleware.
-- **`behalf`** (PyPI) — Python port, identical API shape.
+- **`agent-authority`** (npm) — the core TypeScript library, near-zero deps.
+- **`agent-authority/mcp`** + **`agent-authority/a2a`** — drop-in enforcement middleware.
+- **`agent-authority`** (PyPI) — Python port, identical API shape.
 - **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
@@ -432,7 +432,7 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
 (any party verifies offline with just the issuer public key), **file-backed
-persistence** for revocation + audit, a **`behalf` CLI**, a **dependency-free
+persistence** for revocation + audit, a **`agent-authority` CLI**, a **dependency-free
 stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
 between agents, **capability linting**, **cross-language wire interop**
 (TS⇄Python mandates verify in either port), and a **control plane** for
@@ -443,10 +443,10 @@ the interop check on Node 20/22 and Python 3.9/3.12.
 
 All control-plane state can be file-backed for durability — revocation, audit,
 and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
-`behalf-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
+`agent-authority-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
 port has full parity: not just the library and control plane, but the tooling
-too — the `behalf` CLI, the `behalf-mcp` stdio server, and the quickstart
-generator (`python -m behalf.cli`, or the console scripts after `pip install`).
+too — the `agent-authority` CLI, the `agent-authority-mcp` stdio server, and the quickstart
+generator (`python -m agent_authority.cli`, or the console scripts after `pip install`).
 
 ## Limitations & roadmap
 
@@ -476,7 +476,7 @@ Honest about what this reference implementation does *not* yet do:
   zero-dependency reference signer is correct but not hardened against timing
   side-channels. The Python port now **auto-selects** a hardened native backend
   when one is importable (`cryptography`, then `PyNaCl`), falling back to pure
-  Python otherwise; `behalf.crypto.backend()` reports which is active. Install
+  Python otherwise; `agent_authority.crypto.backend()` reports which is active. Install
   `cryptography` for constant-time Python in hostile-adjacency deployments. (Node
   always uses its native, hardened crypto.)
 - **Rate limiting offers two strategies.** The default `MemoryRateStore` is a

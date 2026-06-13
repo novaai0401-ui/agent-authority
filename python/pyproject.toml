@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "behalf"
+name = "agent-authority"
 version = "0.1.0"
 description = "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs."
 readme = "README.md"
@@ -25,9 +25,9 @@ Repository = "https://github.com/novaai0401-ui/agent-authority"
 Issues = "https://github.com/novaai0401-ui/agent-authority/issues"
 
 [project.scripts]
-behalf = "behalf.cli:main"
-behalf-mcp = "behalf.mcp_server:main"
-behalf-control-plane = "behalf.control_plane:main"
+agent-authority = "agent_authority.cli:main"
+agent-authority-mcp = "agent_authority.mcp_server:main"
+agent-authority-control-plane = "agent_authority.control_plane:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["behalf"]
+packages = ["agent_authority"]

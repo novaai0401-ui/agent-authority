@@ -2,7 +2,7 @@
 
 Speaks newline-delimited JSON-RPC 2.0 and exposes the Behalf discovery tools
 (request_mandate / present_mandate / check_authority) to any MCP client.
-Run it as `behalf-mcp` or `python -m behalf.mcp_server`.
+Run it as `agent-authority-mcp` or `python -m agent_authority.mcp_server`.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class McpServer:
             return ok({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "behalf", "version": "0.1.0"},
+                "serverInfo": {"name": "agent-authority", "version": "0.1.0"},
             })
         if method in ("notifications/initialized", "initialized"):
             return None

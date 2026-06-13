@@ -7,13 +7,13 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.audit import verify  # noqa: E402
-from behalf.control_plane import create_control_plane  # noqa: E402
-from behalf.crypto import new_key_pair  # noqa: E402
-from behalf.errors import AuthorizationError  # noqa: E402
-from behalf.mcp import with_behalf  # noqa: E402
-from behalf.remote import (  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.audit import verify  # noqa: E402
+from agent_authority.control_plane import create_control_plane  # noqa: E402
+from agent_authority.crypto import new_key_pair  # noqa: E402
+from agent_authority.errors import AuthorizationError  # noqa: E402
+from agent_authority.mcp import with_behalf  # noqa: E402
+from agent_authority.remote import (  # noqa: E402
     ControlPlaneClient,
     HttpAuditStore,
     HttpRateStore,
@@ -187,7 +187,7 @@ class ControlPlaneTests(unittest.TestCase):
     def test_consent_and_policy_persist_across_restart(self):
         import tempfile
 
-        from behalf.persist import FileConsentStore, FilePolicyStore
+        from agent_authority.persist import FileConsentStore, FilePolicyStore
 
         d = tempfile.mkdtemp()
         consents_path = os.path.join(d, "consents.json")
@@ -254,7 +254,7 @@ class PerTenantTests(unittest.TestCase):
         import urllib.error
         import urllib.request
 
-        from behalf.crypto import new_key_pair
+        from agent_authority.crypto import new_key_pair
 
         kp_a = new_key_pair()
         kp_b = new_key_pair()
@@ -299,7 +299,7 @@ class DashboardScopingTests(unittest.TestCase):
     def test_dashboard_does_not_leak_other_tenant_audit(self):
         import urllib.request
 
-        from behalf.crypto import new_key_pair
+        from agent_authority.crypto import new_key_pair
 
         kp_a = new_key_pair()
         kp_b = new_key_pair()

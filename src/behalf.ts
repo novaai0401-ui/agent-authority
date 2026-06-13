@@ -261,7 +261,7 @@ export class Behalf implements Engine {
    * binds the presenter to the exact (untruncated) chain and a fresh timestamp,
    * which is what closes trailing-block truncation and stops a serialized token
    * from being a reusable bearer credential. Produce one with `provePossession`
-   * (or, across the wire, `behalf/a2a`'s `present`).
+   * (or, across the wire, `agent-authority/a2a`'s `present`).
    */
   async authorize(token: MandateToken, action: string, proof?: Proof): Promise<void> {
     const chain = chainIds(token);

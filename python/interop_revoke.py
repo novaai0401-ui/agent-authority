@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from behalf.remote import HttpRevocationStore  # noqa: E402
+from agent_authority.remote import HttpRevocationStore  # noqa: E402
 
 
 def main() -> None:

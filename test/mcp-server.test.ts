@@ -9,7 +9,7 @@ test("initialize advertises tools capability", async () => {
   assert.ok(res);
   const result = res!.result as { capabilities: { tools: object }; serverInfo: { name: string } };
   assert.deepEqual(result.capabilities.tools, {});
-  assert.equal(result.serverInfo.name, "behalf");
+  assert.equal(result.serverInfo.name, "agent-authority");
 });
 
 test("notifications get no reply", async () => {

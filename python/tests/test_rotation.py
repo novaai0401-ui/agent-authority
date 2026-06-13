@@ -7,9 +7,9 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from behalf import create_behalf  # noqa: E402
-from behalf.errors import AuthorizationError, BehalfError  # noqa: E402
-from behalf.persist import FileAuditStore  # noqa: E402
+from agent_authority import create_behalf  # noqa: E402
+from agent_authority.errors import AuthorizationError, BehalfError  # noqa: E402
+from agent_authority.persist import FileAuditStore  # noqa: E402
 
 
 class RotationTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class RotationTests(unittest.TestCase):
 
 class CheckpointTests(unittest.TestCase):
     def test_checkpoint_detects_tail_deletion(self):
-        from behalf.crypto import new_key_pair
+        from agent_authority.crypto import new_key_pair
 
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "audit.jsonl")
