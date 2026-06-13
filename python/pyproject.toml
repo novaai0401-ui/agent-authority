@@ -13,6 +13,12 @@ classifiers = ["License :: OSI Approved :: MIT License"]
 keywords = ["agent", "authority", "delegation", "capability", "mandate", "mcp", "a2a", "authorization", "ai"]
 dependencies = []
 
+# Optional natives. The core is dependency-free; install an extra to enable a
+# constant-time Ed25519 backend and sealed credentials (both use `cryptography`).
+[project.optional-dependencies]
+seal = ["cryptography>=41"]
+fast = ["cryptography>=41"]
+
 [project.urls]
 Homepage = "https://github.com/novaai0401-ui/agent-authority"
 Repository = "https://github.com/novaai0401-ui/agent-authority"

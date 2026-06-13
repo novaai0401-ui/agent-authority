@@ -184,6 +184,31 @@ signed into a block) and cannot bypass it by appending their own binding — doi
 so only adds another requirement. The agent's private key is provisioned out of
 band; Behalf never puts it on the wire.
 
+### Sealing a holder credential (encrypted delivery)
+
+`serializeWithKey()` is a secret. `bindAgent` makes a *stolen* one inert; for the
+delivery channel itself, **seal** the credential to the recipient so it's
+unreadable to anyone in between:
+
+```ts
+import { newSealKeyPair } from "behalf";
+
+const recipient = newSealKeyPair();          // recipient's X25519 sealing key
+// ...recipient publishes recipient.publicKey...
+
+const sealed = mandate.sealForRecipient(recipient.publicKey);  // encrypted blob
+// ...deliver `sealed` over any channel...
+const mine = engine.importSealed(sealed, recipient);           // only the recipient opens it
+await mine.authorize("read:calendar");
+```
+
+The scheme (`seal-1`) is ephemeral X25519 → HKDF-SHA256 → AES-256-GCM and is
+**wire-compatible across both ports** (seal in TypeScript, open in Python or vice
+versa). It's native in Node; in Python it needs the optional `cryptography`
+package (the rest of the port stays dependency-free, and `importSealed` raises a
+clear error if it's missing). The sealing key is X25519 and is *separate* from
+the Ed25519 `bindAgent` identity — combine both for delivery + use protection.
+
 ### Issuer key rotation (with overlap)
 
 ```ts

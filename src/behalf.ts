@@ -30,6 +30,7 @@ import {
   type RateStore,
 } from "./store.js";
 import { Mandate, type Engine } from "./mandate.js";
+import { unseal, type SealKeyPair } from "./seal.js";
 import { AuthorizationError, BehalfError, IntegrityError, WideningError } from "./errors.js";
 import type {
   AttenuateOptions,
@@ -508,6 +509,15 @@ export class Behalf implements Engine {
       return new Mandate(token, this, importPrivateKey(parsed.key, pub));
     }
     return new Mandate(parsed as MandateToken, this);
+  }
+
+  /**
+   * Decrypt and import a sealed holder credential (see
+   * `mandate.sealForRecipient`) using the recipient's X25519 sealing keypair.
+   * Equivalent to `import(unseal(sealed, recipient))`.
+   */
+  importSealed(sealed: string, recipient: SealKeyPair): Mandate {
+    return this.import(unseal(sealed, recipient));
   }
 
   /**

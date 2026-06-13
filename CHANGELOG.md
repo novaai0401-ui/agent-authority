@@ -51,6 +51,15 @@ to [Semantic Versioning](https://semver.org/).
   writer's reach.
 - Fixed: `python -m behalf.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
+- **Sealed holder credentials (#8).** `mandate.sealForRecipient(pub)` encrypts a
+  holder credential to a recipient's X25519 sealing key; `engine.importSealed`
+  opens it. Scheme `seal-1` (ephemeral X25519 → HKDF-SHA256 → AES-256-GCM) is
+  wire-compatible across both ports — seal in one, open in the other. Native in
+  Node; Python uses the optional `cryptography` package and raises a clear error
+  if it's absent (the rest of the port stays dependency-free). Defense-in-depth
+  for the delivery channel, complementary to `bindAgent`. New helpers
+  `newSealKeyPair` / `seal` / `unseal`; pinned by `test/seal.test.ts`,
+  `python/tests/test_seal.py`, and a cross-language interop case.
 - **Optional hardened crypto backend (Python).** The Python port auto-selects a
   constant-time native Ed25519 backend when importable (`cryptography`, then
   `PyNaCl`), falling back to the pure-Python reference; `behalf.crypto.backend()`

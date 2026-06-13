@@ -38,6 +38,7 @@ Guarantees, with the mechanism and the test that pins each one:
 | Issuer key rotation with overlap | `rotate()` / `trustKey` / `untrustKey` | `test/rotation.test.ts` |
 | Audit tail-deletion/rewrite detection | signed head checkpoints | `test/rotation.test.ts`, `python/tests/test_rotation.py` |
 | A stolen holder credential cannot act as the bound agent | cryptographic agent-identity binding (`bindAgent` → `agentKey` caveat), proven at authorize; conjunctive so it cannot be stripped or bypassed | `test/agent-binding.test.ts`, `python/tests/test_agent_binding.py` |
+| A holder credential is unreadable in transit to anyone but the recipient | sealed credentials (`seal-1`: ephemeral X25519 → HKDF-SHA256 → AES-256-GCM), wire-compatible across ports | `test/seal.test.ts`, `python/tests/test_seal.py` |
 
 ## Explicit non-goals / accepted limitations
 
@@ -53,9 +54,14 @@ Guarantees, with the mechanism and the test that pins each one:
   cannot act. Bindings are conjunctive (every `agentKey` caveat must be
   satisfied), so they cannot be stripped or shadowed downstream. The agent's
   private key must be provisioned out of band (Behalf does not distribute it).
-- **Holder credentials (`serializeWithKey`) are secrets** — Behalf assumes a
-  secure delivery channel and does not encrypt them itself. Binding the mandate
-  to an agent identity (`bindAgent`) reduces the blast radius of a leak.
+- **Holder credentials (`serializeWithKey`) are secrets.** Two defenses are
+  available: bind the mandate to an agent identity (`bindAgent`) so a *stolen*
+  credential is inert, and/or **seal** it (`sealForRecipient` / `importSealed`,
+  scheme `seal-1`: ephemeral X25519 → HKDF-SHA256 → AES-256-GCM) so it is
+  unreadable in transit/at rest to anyone but the intended recipient. Sealing is
+  wire-compatible across both ports (Python needs the optional `cryptography`
+  package). The plaintext credential is still sensitive once opened — sealing
+  protects delivery, `bindAgent` protects use.
 - **TLS is assumed upstream** for the control plane and A2A transport; without
   a nonce, proof replay is bounded only by `proofSkewMs` (default 5 min).
 - **Pure-Python Ed25519 is not constant-time** (timing side-channels). The

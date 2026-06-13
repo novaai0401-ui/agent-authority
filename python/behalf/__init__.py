@@ -29,6 +29,13 @@ from .errors import (
     WideningError,
 )
 from .mandate import Mandate
+from .seal import (
+    SealKeyPair,
+    SealUnavailableError,
+    new_seal_key_pair,
+    seal,
+    unseal,
+)
 from .persist import (
     FileAuditStore,
     FileConsentStore,
@@ -109,4 +116,9 @@ __all__ = [
     "generate_quickstart",
     "find_surface",
     "list_surfaces",
+    "new_seal_key_pair",
+    "seal",
+    "unseal",
+    "SealKeyPair",
+    "SealUnavailableError",
 ]

@@ -419,6 +419,14 @@ class Behalf:
             return Mandate(parsed["token"], self, parsed["key"])
         return Mandate(parsed, self)
 
+    def import_sealed(self, sealed: str, recipient) -> Mandate:
+        """Decrypt and import a sealed holder credential (see
+        ``mandate.seal_for_recipient``) with the recipient's X25519 sealing
+        keypair. Equivalent to ``import_(unseal(sealed, recipient))``."""
+        from .seal import unseal
+
+        return self.import_(unseal(sealed, recipient))
+
     def verify_signature(self, token: dict) -> None:
         if token.get("v") != 2:
             raise IntegrityError(f"unsupported token version {token.get('v')}")

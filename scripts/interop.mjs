@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createBehalf } from "../dist/index.js";
+import { createBehalf, newSealKeyPair } from "../dist/index.js";
 import { HttpRevocationStore } from "../dist/remote.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -102,6 +102,36 @@ async function allowed(verifier, token, action, proof) {
   const token = verifier.import(out.child).token;
   check("TS->PY->TS  delegated chain allows spend:usd=20", await allowed(verifier, token, "spend:usd=20", out.proofs["spend:usd=20"]));
   check("TS->PY->TS  delegated chain denies spend:usd=21", !(await allowed(verifier, token, "spend:usd=21", out.proofs["spend:usd=21"])));
+}
+
+// ---- F) Sealed credentials across the language boundary (#8). Only runs when
+//        Python sealing is available (the optional `cryptography` package); the
+//        stdlib-only interop job skips it, the native-backend job exercises it. ----
+{
+  if (py(["interop_seal.py", "avail"]).trim() === "yes") {
+    // TS seals -> Python opens + authorizes.
+    const recip = JSON.parse(py(["interop_seal.py", "keypair"]));
+    const issuer = createBehalf();
+    const m = issuer.grant({ principal: "ts", agent: "a", can: ["read:x"], expiresIn: "1h" });
+    const sealed = m.sealForRecipient(recip.pub);
+    const r = py(["interop_seal.py", "open", issuer.publicKey, recip.priv, recip.pub, sealed, "read:x"]);
+    check("TS-seal -> PY-open authorizes the credential", r === "ALLOW");
+
+    // Python seals -> TS opens + authorizes.
+    const tsRecip = newSealKeyPair();
+    const out = JSON.parse(py(["interop_seal.py", "issue_and_seal", tsRecip.publicKey]));
+    const verifier = createBehalf({ trust: [out.pubkey] });
+    const opened = verifier.importSealed(out.sealed, tsRecip);
+    let ok = true;
+    try {
+      await opened.authorize("read:x");
+    } catch {
+      ok = false;
+    }
+    check("PY-seal -> TS-open authorizes the credential", ok && opened.canDelegate);
+  } else {
+    console.log("skip - sealed-credential interop (Python 'cryptography' not installed)");
+  }
 }
 
 // ---- C) Cross-language revocation propagation through the control plane ----

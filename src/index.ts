@@ -77,6 +77,7 @@ export {
   type ConsentProviderOptions,
   type ConsentRequest,
 } from "./remote.js";
+export { newSealKeyPair, seal, unseal, type SealKeyPair } from "./seal.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
 export {

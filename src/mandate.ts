@@ -1,5 +1,6 @@
 import type { AttenuateOptions, AuditEntry, Caveat, MandateToken, Proof } from "./types.js";
 import { exportPrivateKey, type KeyPair } from "./crypto.js";
+import { seal } from "./seal.js";
 import type { KeyObject } from "node:crypto";
 
 /**
@@ -152,5 +153,16 @@ export class Mandate {
     }
     const payload = { token: this.token, key: exportPrivateKey(this.delegationKey) };
     return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  }
+
+  /**
+   * Holder credential, encrypted to a recipient's X25519 sealing key — so the
+   * credential is unreadable in transit/at rest to anyone but the intended
+   * agent. Open it with `engine.importSealed(sealed, recipientKeyPair)`. This is
+   * `serializeWithKey()` wrapped in `seal()`; use it when the delivery channel
+   * isn't fully trusted. (Defense-in-depth on top of `bindAgent`.)
+   */
+  sealForRecipient(recipientPublicKey: string): string {
+    return seal(this.serializeWithKey(), recipientPublicKey);
   }
 }

@@ -129,3 +129,12 @@ class Mandate:
             {"token": self.token, "key": self._delegation_key}, separators=(",", ":")
         ).encode("utf-8")
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    def seal_for_recipient(self, recipient_public_key: str) -> str:
+        """Holder credential encrypted to a recipient's X25519 sealing key — open
+        with ``engine.import_sealed(sealed, recipient_keypair)``. This is
+        ``serialize_with_key()`` wrapped in ``seal()`` (defense-in-depth on top of
+        ``bind_agent``). Requires the ``cryptography`` package."""
+        from .seal import seal
+
+        return seal(self.serialize_with_key(), recipient_public_key)
