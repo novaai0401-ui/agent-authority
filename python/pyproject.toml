@@ -5,12 +5,25 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-authority"
 version = "0.1.0"
-description = "The reference implementation of agent authority: verifiable, scoped, revocable mandates for AI agents in five verbs."
+description = "Authorization for AI agents: verifiable, scoped, revocable capability tokens (mandates) with attenuable delegation, for MCP and A2A. The reference implementation of agent authority — zero-dependency TypeScript & Python."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-classifiers = ["License :: OSI Approved :: MIT License"]
-keywords = ["agent", "authority", "delegation", "capability", "mandate", "mcp", "a2a", "authorization", "ai"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Developers",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Development Status :: 4 - Beta",
+]
+keywords = [
+    "agent-authority", "agent", "authority", "authorization", "ai-agents",
+    "agentic", "llm", "delegation", "capability", "capability-tokens",
+    "capability-based-security", "least-privilege", "mandate", "macaroons",
+    "biscuit", "oauth", "on-behalf-of", "spiffe", "ed25519", "revocation",
+    "mcp", "a2a", "permissions",
+]
 dependencies = []
 
 # Optional natives. The core is dependency-free; install an extra to enable a

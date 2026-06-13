@@ -1,8 +1,20 @@
 # agent-authority (Python)
 
-The Python port of [Behalf](../README.md) — the reference implementation of
-agent authority. Identical API shape to the TypeScript library, zero
-dependencies (standard library only).
+**Authorization for AI agents** — the reference implementation of **agent
+authority** (project name: *Behalf*). Verifiable, scoped, time-bound, revocable
+**capability tokens** (mandates) with attenuable, macaroon/biscuit-style
+**delegation**, plus MCP and agent-to-agent (A2A) middleware. Capability-based
+security, OAuth 2.1 on-behalf-of–style grants, and SPIFFE/SVID-style agent
+identity for multi-agent / LLM systems.
+
+Identical API shape to the TypeScript library, **zero dependencies** (standard
+library only). The optional `cryptography` extra enables a constant-time Ed25519
+backend and sealed credentials:
+
+```bash
+pip install agent-authority          # core, dependency-free
+pip install "agent-authority[seal]"  # + sealed credentials / hardened crypto
+```
 
 ## The five verbs
 

@@ -1,14 +1,38 @@
-# Behalf
+# agent-authority
 
-> The reference implementation of agent authority. Behalf gives any AI agent a
-> **verifiable, scoped, revocable** identity and delegation chain in five verbs.
+> **Authorization for AI agents** — verifiable, scoped, revocable capability
+> tokens with delegation, for MCP and A2A. Project name: **Behalf**. Zero
+> dependencies, TypeScript **and** Python, offline-verifiable. Five verbs.
+
+[![npm](https://img.shields.io/npm/v/agent-authority?logo=npm)](https://www.npmjs.com/package/agent-authority)
+[![PyPI](https://img.shields.io/pypi/v/agent-authority?logo=pypi&logoColor=white)](https://pypi.org/project/agent-authority/)
+[![CI](https://github.com/novaai0401-ui/agent-authority/actions/workflows/ci.yml/badge.svg)](https://github.com/novaai0401-ui/agent-authority/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+**agent-authority** is the reference implementation of **agent authority**: the
+authorization and delegation layer for AI agents. It gives any agent — and any
+sub-agent it delegates to — a **verifiable, scoped, time-bound, revocable**
+identity and permission chain, so a tool server, MCP host, or agent-to-agent
+(A2A) call can answer *"is this agent actually allowed to do this, right now?"*
+offline, with only a public key.
+
+It solves **AI agent authorization / agent permissions** with **capability-based
+security**: least-privilege, attenuable (macaroon/biscuit-style) **capability
+tokens**, an **OAuth 2.1 on-behalf-of**–style principal→agent grant, and
+**SPIFFE/SVID**-style cryptographic agent identity — without cloud, model, or
+framework lock-in.
+
+```bash
+npm install agent-authority        # Node / TypeScript
+pip install agent-authority        # Python (add the [seal] extra for sealed credentials)
+```
 
 Agent authority is becoming required infrastructure: multi-agent systems are
 already the norm, yet most tool servers ship with no auth at all. The *standard*
 for agent identity and delegation is being defined by NIST, the IETF, and the
-Linux Foundation's Agentic AI Foundation. Behalf doesn't try to win that race —
-it's the clean, neutral, AI-legible **implementation** of it. The `requests` of
-the agent era: MIT-licensed, the install nobody reinvents.
+Linux Foundation's Agentic AI Foundation. This project doesn't try to win that
+race — it's the clean, neutral, AI-legible **implementation** of it. The
+`requests` of the agent era: MIT-licensed, the install nobody reinvents.
 
 Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token that proves *who authorized what, within which limits, and
