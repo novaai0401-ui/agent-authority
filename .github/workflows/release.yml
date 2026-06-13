@@ -26,13 +26,16 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - name: Pack (always) and publish (tag + token only)
+      - name: Pack (always) and publish (tag + token only; idempotent)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           HAS_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
         run: |
           npm pack
-          if [ "$HAS_TOKEN" = "true" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "agent-authority@$VERSION" version >/dev/null 2>&1; then
+            echo "agent-authority@$VERSION is already on npm — skipping publish."
+          elif [ "$HAS_TOKEN" = "true" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
             echo "Publishing to npm…"
             npm publish --provenance --access public
           else
