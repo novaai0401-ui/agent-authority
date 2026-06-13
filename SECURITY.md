@@ -99,5 +99,5 @@ Cross-language verifiers should validate against
 
 Both ports have **zero runtime dependencies** (Node built-ins / Python stdlib
 only). Dev dependencies are TypeScript and `@types/node`. The release workflow
-publishes with npm provenance and is dry-run unless a version tag and registry
-tokens are present.
+publishes only on a version tag: PyPI via **Trusted Publishing (OIDC)** — no
+long-lived token — and npm with **provenance**. Non-tag runs are dry-runs.

@@ -527,6 +527,26 @@ durability/scaling/hardening trade-offs.
 This implementation has not had an independent cryptographic audit — commission
 one before any 1.0 / production positioning.
 
+## Publishing
+
+Releases are cut by `.github/workflows/release.yml` on a `v*` tag (every other
+run is a safe dry-run). Both packages publish as **`agent-authority`**.
+
+- **PyPI — Trusted Publishing (no token).** On PyPI, add a *pending publisher*
+  (Account → Publishing): PyPI project `agent-authority`, owner `novaai0401-ui`,
+  repository `agent-authority`, workflow `release.yml`. This authorizes the first
+  publish of a brand-new project over OIDC — no `PYPI_TOKEN` secret, nothing to
+  leak or rotate.
+- **npm.** Add an automation `NPM_TOKEN` as a repository secret
+  (Settings → Secrets and variables → Actions); the workflow publishes with npm
+  provenance.
+
+Then:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0   # triggers the gated publish of both
+```
+
 ## License
 
 MIT — see [LICENSE](./LICENSE). Open source, use it anywhere, including

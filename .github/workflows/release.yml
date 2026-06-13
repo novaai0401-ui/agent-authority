@@ -43,27 +43,27 @@ jobs:
   pypi:
     name: PyPI package
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: python
+    permissions:
+      contents: read
+      id-token: write # PyPI Trusted Publishing (OIDC) — no long-lived token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade build twine
-      - run: python -m unittest discover -s tests
-      - run: python -m build
-      - run: twine check dist/*
-      - name: Publish (tag + token only)
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-          HAS_TOKEN: ${{ secrets.PYPI_TOKEN != '' }}
+      - name: Test + build + validate (always)
+        working-directory: python
         run: |
-          if [ "$HAS_TOKEN" = "true" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            echo "Publishing to PyPI…"
-            twine upload dist/*
-          else
-            echo "Dry-run (no PYPI_TOKEN or not a tag); package validated by twine check."
-          fi
+          python -m pip install --upgrade build twine
+          python -m unittest discover -s tests
+          python -m build
+          twine check dist/*
+      # Publishes only on a version tag, via Trusted Publishing. Configure a PyPI
+      # "pending publisher" first (owner: novaai0401-ui, repo: agent-authority,
+      # workflow: release.yml); this works even though the project doesn't exist
+      # yet, and needs NO PYPI_TOKEN secret. See README "Publishing".
+      - name: Publish to PyPI (tag only)
+        if: github.ref_type == 'tag'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/
