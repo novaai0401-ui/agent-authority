@@ -51,6 +51,19 @@ to [Semantic Versioning](https://semver.org/).
   writer's reach.
 - Fixed: `python -m behalf.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
+- **Optional hardened crypto backend (Python).** The Python port auto-selects a
+  constant-time native Ed25519 backend when importable (`cryptography`, then
+  `PyNaCl`), falling back to the pure-Python reference; `behalf.crypto.backend()`
+  reports the active one. The selector self-checks byte-compatibility with the
+  reference (and tolerates a broken native lib, including Rust panics, without
+  noise) so cross-port tokens stay valid. No new required dependency.
+- **Token-bucket rate limiting.** `TokenBucketRateStore` is a burst-shaping
+  alternative to the default sliding-count `MemoryRateStore` — drop-in for any
+  `RateStore` slot (engine or control plane).
+- **Cross-language delegation verified.** A holder credential
+  (`serializeWithKey`) issued in one port can be imported **and attenuated** in
+  the other; the interop check now pins `PY->TS->PY` and `TS->PY->TS`
+  delegated-chain cases (previously documented as verify-only).
 - **Cryptographic agent identity binding (C3, SVID-style).** Grant or attenuate
   with `bindAgent` (the agent's public key) to add an `agentKey` caveat;
   authorize then requires a proof of possession of the matching private key

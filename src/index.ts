@@ -43,6 +43,7 @@ export {
   MemoryRevocationStore,
   MemoryAuditStore,
   MemoryRateStore,
+  TokenBucketRateStore,
   MemoryConsentStore,
   MemoryPolicyStore,
   CachingRevocationStore,

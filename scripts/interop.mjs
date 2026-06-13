@@ -75,6 +75,35 @@ async function allowed(verifier, token, action, proof) {
   check("TS->PY  attenuated chain denies spend:usd=21", deny.startsWith("DENY"));
 }
 
+// ---- D) Cross-language DELEGATION: PY issues a holder credential -> TS imports
+//        + attenuates (signs a new block) -> PY verifies the resulting chain ----
+{
+  const out = JSON.parse(py(["interop_issue.py", "spend:usd<=50", "-", "ignored"]));
+  const eng = createBehalf({ trust: [out.pubkey] });
+  const imported = eng.import(out.cred);
+  check("PY->TS  imported credential can delegate", imported.canDelegate === true);
+  const child = imported.attenuate({ can: ["spend:usd<=20"], agent: "ts-sub" });
+  const childSer = child.serialize();
+  const verify = (action) =>
+    py(["interop_verify.py", out.pubkey, childSer, action, JSON.stringify(child.prove(action))]);
+  check("PY->TS->PY  delegated chain allows spend:usd=20", verify("spend:usd=20") === "ALLOW");
+  check("PY->TS->PY  delegated chain denies spend:usd=21", verify("spend:usd=21").startsWith("DENY"));
+}
+
+// ---- E) Cross-language DELEGATION, reverse: TS issues a holder credential ->
+//        PY imports + attenuates -> TS verifies the resulting chain ----
+{
+  const issuer = createBehalf();
+  const m = issuer.grant({ principal: "ts", agent: "issuer", can: ["spend:usd<=50"], expiresIn: "1h" });
+  const out = JSON.parse(
+    py(["interop_delegate.py", issuer.publicKey, m.serializeWithKey(), "spend:usd<=20", "spend:usd=20,spend:usd=21"]),
+  );
+  const verifier = createBehalf({ trust: [issuer.publicKey] });
+  const token = verifier.import(out.child).token;
+  check("TS->PY->TS  delegated chain allows spend:usd=20", await allowed(verifier, token, "spend:usd=20", out.proofs["spend:usd=20"]));
+  check("TS->PY->TS  delegated chain denies spend:usd=21", !(await allowed(verifier, token, "spend:usd=21", out.proofs["spend:usd=21"])));
+}
+
 // ---- C) Cross-language revocation propagation through the control plane ----
 //   The control plane runs as its own process (the bin); Python issues a mandate
 //   and later revokes it via the plane; a TS verifier (checking revocation

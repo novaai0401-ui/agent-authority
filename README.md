@@ -441,14 +441,24 @@ Honest about what this reference implementation does *not* yet do:
   like any client that skips the check). Revocation, by contrast, can be wrapped
   in `CachingRevocationStore` for a bounded staleness window. Signature, scope,
   and expiry are always fully offline.
-- **Cross-language delegation is verify-only.** A mandate issued in one port
-  verifies/authorizes in the other, but attenuation needs the in-memory
-  delegation key, so delegate within the issuing port.
-- **Pure-Python Ed25519 is not constant-time.** The zero-dependency reference
-  signer is correct but not hardened against timing side-channels; use libsodium
-  for production Python deployments. (Node uses its native, hardened crypto.)
-- **Rate windows are sliding-count, not token-bucket**, and rejected attempts
-  are not counted — adequate for caps, not for burst shaping.
+- **Cross-language delegation works.** A holder credential
+  (`serializeWithKey()`) issued in one port can be imported **and attenuated** in
+  the other: a block signed in Python over a chain rooted in TypeScript (or vice
+  versa) verifies, because both ports use raw Ed25519 keys and byte-identical
+  canonical JSON. Pinned by the interop check (`PY->TS->PY` and `TS->PY->TS`
+  delegated-chain cases in `scripts/interop.mjs`).
+- **Pure-Python Ed25519 is not constant-time — auto-upgraded when possible.** The
+  zero-dependency reference signer is correct but not hardened against timing
+  side-channels. The Python port now **auto-selects** a hardened native backend
+  when one is importable (`cryptography`, then `PyNaCl`), falling back to pure
+  Python otherwise; `behalf.crypto.backend()` reports which is active. Install
+  `cryptography` for constant-time Python in hostile-adjacency deployments. (Node
+  always uses its native, hardened crypto.)
+- **Rate limiting offers two strategies.** The default `MemoryRateStore` is a
+  sliding-count window (max N per window); `TokenBucketRateStore` is now available
+  for **burst shaping** (an initial burst up to the limit, then a steady refill).
+  Both are drop-in for any `RateStore` slot (engine `rate:` or the control plane),
+  and neither counts rejected attempts.
 - **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
   naive single-record tampering — but a writer with full store access can
   recompute the chain, and tail deletion alone isn't detectable. Mitigation

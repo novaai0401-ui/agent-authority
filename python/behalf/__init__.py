@@ -58,6 +58,7 @@ from .store import (
     PolicyStore,
     RateStore,
     RevocationStore,
+    TokenBucketRateStore,
 )
 
 __version__ = "0.1.0"
@@ -82,6 +83,7 @@ __all__ = [
     "MemoryRevocationStore",
     "MemoryAuditStore",
     "MemoryRateStore",
+    "TokenBucketRateStore",
     "RevocationStore",
     "AuditStore",
     "RateStore",

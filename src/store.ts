@@ -149,6 +149,35 @@ export class MemoryRateStore implements RateStore {
   }
 }
 
+/**
+ * Token-bucket rate limiting — a smoother alternative to {@link MemoryRateStore}'s
+ * sliding-count window, for callers who want **burst shaping**. Each key owns a
+ * bucket of capacity `limit` that refills continuously at `limit / windowMs`
+ * tokens per ms; a hit consumes one token if available (allow), and a rejected
+ * hit consumes nothing (so rejections aren't counted, matching the sliding
+ * store). The effect: an initial burst of up to `limit`, then a steady long-run
+ * rate of `limit` per `windowMs`. Drop-in for any `RateStore` slot — pass it as
+ * `rate` to an engine, or to the control plane for a shared bucket.
+ *
+ * Like the sliding store this is per-process unless shared; for one cap across
+ * agents, run it inside the control plane and point agents at `HttpRateStore`.
+ */
+export class TokenBucketRateStore implements RateStore {
+  private readonly buckets = new Map<string, { tokens: number; last: number }>();
+  hit(key: string, windowMs: number, limit: number, now: number): boolean {
+    if (limit <= 0 || windowMs <= 0) return false;
+    const refillPerMs = limit / windowMs;
+    const b = this.buckets.get(key) ?? { tokens: limit, last: now };
+    // Refill for elapsed time (clamped to capacity), then try to spend a token.
+    b.tokens = Math.min(limit, b.tokens + Math.max(0, now - b.last) * refillPerMs);
+    b.last = now;
+    const allowed = b.tokens >= 1;
+    if (allowed) b.tokens -= 1;
+    this.buckets.set(key, b);
+    return allowed;
+  }
+}
+
 export class MemoryAuditStore implements AuditStore {
   private entries: AuditEntry[] = [];
   record(fields: AuditFields): AuditEntry {

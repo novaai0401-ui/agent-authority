@@ -121,6 +121,31 @@ class MemoryRateStore:
         return True
 
 
+class TokenBucketRateStore:
+    """Token-bucket rate limiting — a smoother alternative to MemoryRateStore's
+    sliding-count window, for burst shaping. Each key owns a bucket of capacity
+    ``limit`` that refills at ``limit / window_ms`` tokens per ms; a hit spends
+    one token if available (allow), a rejected hit spends nothing. Permits an
+    initial burst up to ``limit`` then a steady long-run rate. Drop-in for any
+    RateStore slot (engine ``rate=`` or the control plane)."""
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, dict[str, float]] = {}
+
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        if limit <= 0 or window_ms <= 0:
+            return False
+        refill = limit / window_ms
+        b = self._buckets.get(key) or {"tokens": float(limit), "last": float(now)}
+        b["tokens"] = min(limit, b["tokens"] + max(0, now - b["last"]) * refill)
+        b["last"] = float(now)
+        allowed = b["tokens"] >= 1
+        if allowed:
+            b["tokens"] -= 1
+        self._buckets[key] = b
+        return allowed
+
+
 class MemoryAuditStore:
     def __init__(self) -> None:
         self._entries: list[dict] = []

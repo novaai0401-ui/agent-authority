@@ -58,8 +58,13 @@ Guarantees, with the mechanism and the test that pins each one:
   to an agent identity (`bindAgent`) reduces the blast radius of a leak.
 - **TLS is assumed upstream** for the control plane and A2A transport; without
   a nonce, proof replay is bounded only by `proofSkewMs` (default 5 min).
-- **Pure-Python Ed25519 is not constant-time** (timing side-channels); use the
-  Node port or swap in libsodium for hostile-adjacency Python deployments.
+- **Pure-Python Ed25519 is not constant-time** (timing side-channels). The
+  Python port auto-selects a hardened native backend when importable
+  (`cryptography`, then `PyNaCl`) and falls back to the pure-Python reference
+  otherwise; `behalf.crypto.backend()` reports the active one. For
+  hostile-adjacency Python, install `cryptography` (or use the Node port). The
+  selector self-checks that any native backend is byte-compatible with the
+  reference before adopting it, so cross-port tokens stay valid.
 - **Shared rate limits trust the honest-enforcer model**: limit/window derive
   from the caller's mandate; a runtime that skips its own checks is out of
   scope (as for any client-side enforcement).
