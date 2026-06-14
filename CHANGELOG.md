@@ -51,6 +51,13 @@ to [Semantic Versioning](https://semver.org/).
   writer's reach.
 - Fixed: `python -m agent_authority.control_plane` exited immediately (missing
   `__main__` guard); the console script was unaffected.
+- **Optional control-plane / store improvements.** `CachingRateStore` wraps a
+  networked rate store and caches *denials* (never allows) so a client over its
+  cap stops hammering the network, with no risk of over-spending the shared cap.
+  `requireTenant: true` puts the control plane in strict-isolation mode (every
+  request must be a tenant token; admin/anonymous refused). `startAuditCheckpointing()`
+  automates signed audit checkpoints on a timer. All opt-in, both ports; pinned by
+  `test/improvements.test.ts` and `python/tests/test_improvements.py`.
 - **Sealed holder credentials (#8).** `mandate.sealForRecipient(pub)` encrypts a
   holder credential to a recipient's X25519 sealing key; `engine.importSealed`
   opens it. Scheme `seal-1` (ephemeral X25519 → HKDF-SHA256 → AES-256-GCM) is

@@ -56,6 +56,13 @@ export interface ControlPlaneOptions {
    */
   tenants?: Record<string, string>;
   /**
+   * Strict isolation: require **every** request to authenticate as a tenant
+   * (a `tenants` bearer token). Admin/global and anonymous access are refused, so
+   * there is no code path that can read or write across tenants. Requires
+   * `tenants` to be set.
+   */
+  requireTenant?: boolean;
+  /**
    * Pending consent requests older than this are marked "expired" (a terminal
    * deny for the consent provider). Disabled when unset.
    */
@@ -99,6 +106,10 @@ export function createControlPlane(options: ControlPlaneOptions = {}): ControlPl
       } else {
         return send(res, 401, { error: "unauthorized" });
       }
+    }
+    // Strict isolation: only tenant callers allowed (no admin/global, no anon).
+    if (options.requireTenant && !callerIssuer) {
+      return send(res, 403, { error: "a tenant token is required" });
     }
 
     const url = new URL(req.url ?? "/", "http://localhost");
