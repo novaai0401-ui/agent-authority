@@ -16,6 +16,34 @@ pip install agent-authority          # core, dependency-free
 pip install "agent-authority[seal]"  # + sealed credentials / hardened crypto
 ```
 
+## In plain words
+
+Think of a **Mandate** as a **permission slip** for an AI agent.
+
+Imagine you hire an assistant to run errands for you. You don't hand over your
+wallet and house keys — you write a note: *"You may read my calendar and spend
+up to $50, and only for the next hour."* That note is a Mandate.
+
+The five verbs are just the things you can do with that note:
+
+- **grant** — *write the permission slip.* "This agent may do X, up to this
+  limit, until this time."
+- **authorize** — *check the slip before acting.* The agent must show the slip
+  (and prove it's really theirs) before it's allowed to do something.
+- **attenuate** — *make a smaller copy for a helper.* A sub-agent can only get
+  the same powers or fewer — never more.
+- **revoke** — *tear the slip up.* Cancel it instantly; every copy handed
+  downstream stops working too.
+- **audit** — *the logbook.* Every check is written down, so you can see exactly
+  what happened.
+
+Two things make the slip safe: it **can't be faked or upgraded** (it's signed
+with cryptography, and a helper can only shrink the powers), and **holding the
+paper isn't enough** — an agent must *prove* it's the rightful holder, so a
+stolen copy by itself is useless.
+
+The rest of this page shows how to do each of these in code.
+
 ## The five verbs
 
 ```python
