@@ -36,7 +36,7 @@ class McpServer:
             return ok({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "agent-authority", "version": "0.1.4"},
+                "serverInfo": {"name": "agent-authority", "version": "0.1.5"},
             })
         if method in ("notifications/initialized", "initialized"):
             return None
