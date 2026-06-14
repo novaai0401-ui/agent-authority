@@ -81,6 +81,7 @@ class ControlPlane:
         policies=None,
         tenant_scoped: bool = False,
         tenants: Optional[dict] = None,
+        require_tenant: bool = False,
         consent_ttl_ms: Optional[int] = None,
         token: Optional[str] = None,
     ) -> None:
@@ -89,6 +90,7 @@ class ControlPlane:
         self.rate = rate or MemoryRateStore()
         self.tenant_scoped = tenant_scoped
         self.tenants = tenants or {}
+        self.require_tenant = require_tenant
         self.consent_ttl_ms = consent_ttl_ms
         self.token = token
         self.consents = consents or MemoryConsentStore()
@@ -172,6 +174,8 @@ class ControlPlane:
                 caller = self._resolve()
                 if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                if cp.require_tenant and caller["issuer"] is None:
+                    return self._send(403, {"error": "a tenant token is required"})
                 issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 if path == "/":
@@ -255,6 +259,8 @@ class ControlPlane:
                 caller = self._resolve()
                 if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                if cp.require_tenant and caller["issuer"] is None:
+                    return self._send(403, {"error": "a tenant token is required"})
                 issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 body = self._read_json() or {}
@@ -333,6 +339,8 @@ class ControlPlane:
                 caller = self._resolve()
                 if caller is None:
                     return self._send(401, {"error": "unauthorized"})
+                if cp.require_tenant and caller["issuer"] is None:
+                    return self._send(403, {"error": "a tenant token is required"})
                 issuer_scope = caller["issuer"]
                 path = urlparse(self.path).path
                 m = re.match(r"^/v1/policy/([^/]+)$", path)
@@ -392,6 +400,7 @@ def create_control_plane(
     policies=None,
     tenant_scoped: bool = False,
     tenants: Optional[dict] = None,
+    require_tenant: bool = False,
     consent_ttl_ms: Optional[int] = None,
     token: Optional[str] = None,
 ) -> ControlPlane:
@@ -403,6 +412,7 @@ def create_control_plane(
         policies=policies,
         tenant_scoped=tenant_scoped,
         tenants=tenants,
+        require_tenant=require_tenant,
         consent_ttl_ms=consent_ttl_ms,
         token=token,
     )

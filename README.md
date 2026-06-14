@@ -477,14 +477,17 @@ guarantees — they're about scale, storage, and deployment):
 - **Sharing one control server between separate customers?** Give each customer
   their own token. Then their logs, policies, revocations, rate counters, and
   consent requests stay separate. *(Set `tenants: { token: issuerPub }`; admin
-  revocations stay global.)* Without per-customer tokens, treat one server as
-  belonging to a single team — run one server per team.
+  revocations stay global. For strict isolation, add `requireTenant: true` so the
+  server refuses any non-tenant request.)* Without per-customer tokens, treat one
+  server as belonging to a single team — run one server per team.
 
 - **A shared limit (e.g. "10 emails/hour across all agents") asks the server
-  every time.** That check can't be cached, or agents could cheat past the cap;
-  the server uses *its own clock* so no one can fudge the timing. Everything else
-  — signature, scope, expiry — is checked instantly and offline. *(Revocation can
-  be cached for a few seconds via `CachingRevocationStore`.)*
+  every time.** On the *allow* path that check can't be cached, or agents could
+  cheat past the cap; the server uses *its own clock* so no one can fudge the
+  timing. Everything else — signature, scope, expiry — is checked instantly and
+  offline. *(Wrap the rate store in `CachingRateStore` to stop re-asking while a
+  client is already over its cap; revocation can be cached for a few seconds via
+  `CachingRevocationStore`.)*
 
 - **Python and TypeScript fully understand each other.** A permission slip made
   in one can be used *and* narrowed in the other — they store keys and compute
@@ -503,9 +506,10 @@ guarantees — they're about scale, storage, and deployment):
 - **The logbook (audit) catches tampering, but isn't bulletproof on its own.** It
   detects edits and reordering, but someone with full write access to the storage
   could rewrite the whole book. The fix: periodically *sign* the latest page
-  (`checkpointAudit()`) and keep that signature somewhere they can't reach —
-  later, `verifyAuditCheckpoint()` reveals any rewrite or deletion. Write-once
-  storage is the strongest option.
+  (`checkpointAudit()`, or `startAuditCheckpointing()` to do it automatically on
+  a timer) and keep that signature somewhere they can't reach — later,
+  `verifyAuditCheckpoint()` reveals any rewrite or deletion. Write-once storage
+  is the strongest option.
 
 - **The agent's name on a slip is just a label — but you can make it
   cryptographic.** Add `bindAgent` at grant/attenuate time and the agent must

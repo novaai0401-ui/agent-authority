@@ -150,6 +150,31 @@ export class MemoryRateStore implements RateStore {
 }
 
 /**
+ * Wraps a (typically networked) {@link RateStore} to cut traffic on the **abuse
+ * path**. When the inner store says "over the limit", that denial is cached for
+ * `ttlMs`, so a client hammering past its cap stops generating a network call
+ * per attempt. It **never** caches an "allowed" verdict — every allow still goes
+ * to the authoritative store — so the shared cap can't be over-spent. The only
+ * effect is that a key may stay denied up to `ttlMs` longer than strictly
+ * necessary (conservative: it errs toward *more* blocking, never less).
+ */
+export class CachingRateStore implements RateStore {
+  private readonly deniedUntil = new Map<string, number>();
+  constructor(
+    private readonly inner: RateStore,
+    private readonly opts: { ttlMs: number },
+  ) {}
+  async hit(key: string, windowMs: number, limit: number, now: number): Promise<boolean> {
+    const until = this.deniedUntil.get(key);
+    if (until !== undefined && now < until) return false; // cached denial
+    const allowed = await this.inner.hit(key, windowMs, limit, now);
+    if (!allowed) this.deniedUntil.set(key, now + this.opts.ttlMs);
+    else this.deniedUntil.delete(key);
+    return allowed;
+  }
+}
+
+/**
  * Token-bucket rate limiting — a smoother alternative to {@link MemoryRateStore}'s
  * sliding-count window, for callers who want **burst shaping**. Each key owns a
  * bucket of capacity `limit` that refills continuously at `limit / windowMs`

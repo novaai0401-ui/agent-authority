@@ -55,6 +55,7 @@ from .remote import (
 )
 from .store import (
     AuditStore,
+    CachingRateStore,
     CachingRevocationStore,
     ConsentStore,
     MemoryAuditStore,
@@ -67,6 +68,7 @@ from .store import (
     RevocationStore,
     TokenBucketRateStore,
 )
+from .checkpoint import start_audit_checkpointing
 
 __version__ = "0.1.0"
 
@@ -91,6 +93,8 @@ __all__ = [
     "MemoryAuditStore",
     "MemoryRateStore",
     "TokenBucketRateStore",
+    "CachingRateStore",
+    "start_audit_checkpointing",
     "RevocationStore",
     "AuditStore",
     "RateStore",

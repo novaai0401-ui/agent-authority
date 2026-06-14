@@ -44,6 +44,7 @@ export {
   MemoryAuditStore,
   MemoryRateStore,
   TokenBucketRateStore,
+  CachingRateStore,
   MemoryConsentStore,
   MemoryPolicyStore,
   CachingRevocationStore,
@@ -78,6 +79,11 @@ export {
   type ConsentRequest,
 } from "./remote.js";
 export { newSealKeyPair, seal, unseal, type SealKeyPair } from "./seal.js";
+export {
+  startAuditCheckpointing,
+  type Checkpointable,
+  type CheckpointingOptions,
+} from "./checkpoint.js";
 export { verify as verifyAuditLog } from "./audit.js";
 export { lint, isClean, type LintFinding, type LintLevel } from "./lint.js";
 export {

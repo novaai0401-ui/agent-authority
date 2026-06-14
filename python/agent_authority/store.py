@@ -146,6 +146,33 @@ class TokenBucketRateStore:
         return allowed
 
 
+class CachingRateStore:
+    """Wraps a (typically networked) RateStore to cut traffic on the abuse path.
+
+    When the inner store says "over the limit", that denial is cached for
+    ``ttl_ms``, so a client hammering past its cap stops generating a network
+    call per attempt. It NEVER caches an "allowed" verdict — every allow still
+    goes to the authoritative store — so the shared cap can't be over-spent. A
+    key may stay denied up to ``ttl_ms`` longer than strictly necessary
+    (conservative: errs toward more blocking, never less)."""
+
+    def __init__(self, inner, ttl_ms: int) -> None:
+        self._inner = inner
+        self._ttl_ms = ttl_ms
+        self._denied_until: dict[str, int] = {}
+
+    def hit(self, key: str, window_ms: int, limit: float, now: int) -> bool:
+        until = self._denied_until.get(key)
+        if until is not None and now < until:
+            return False
+        allowed = self._inner.hit(key, window_ms, limit, now)
+        if not allowed:
+            self._denied_until[key] = now + self._ttl_ms
+        else:
+            self._denied_until.pop(key, None)
+        return allowed
+
+
 class MemoryAuditStore:
     def __init__(self) -> None:
         self._entries: list[dict] = []
