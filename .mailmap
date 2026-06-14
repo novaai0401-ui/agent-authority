@@ -1,0 +1,4 @@
+# Map the environment's default git identity to the project owner, so
+# `git log`, `git shortlog`, and `git blame` attribute all commits correctly
+# without rewriting history.
+novaai0401-ui <novaai0401@gmail.com> Claude <noreply@anthropic.com>
