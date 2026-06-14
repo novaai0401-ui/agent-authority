@@ -471,55 +471,47 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 
 ## Limitations & roadmap
 
-Honest about what this reference implementation does *not* yet do:
+Honest, in plain words, about the trade-offs (none of these weaken the core
+guarantees — they're about scale, storage, and deployment):
 
-- **Tenant isolation requires per-tenant tokens.** With
-  `tenants: { token: issuerPub }`, audit, policy, revocation, rate, and consent
-  are all namespaced per tenant (admin revocations stay global). Without tenant
-  tokens the plane is a single trust domain — run one plane per trust domain in
-  that mode.
-- **Shared rate checks hit the network each call.** `HttpRateStore` consults the
-  control plane on every `authorize()` (the cap is authoritative and can't be
-  cached). The plane stamps each hit with its **own clock** and validates the
-  window/limit, so a skewed or hostile client can't slide the window; the
-  limit/window values themselves still come from the caller's mandate (the
-  honest-enforcer model — a node that bypasses its own runtime is out of scope,
-  like any client that skips the check). Revocation, by contrast, can be wrapped
-  in `CachingRevocationStore` for a bounded staleness window. Signature, scope,
-  and expiry are always fully offline.
-- **Cross-language delegation works.** A holder credential
-  (`serializeWithKey()`) issued in one port can be imported **and attenuated** in
-  the other: a block signed in Python over a chain rooted in TypeScript (or vice
-  versa) verifies, because both ports use raw Ed25519 keys and byte-identical
-  canonical JSON. Pinned by the interop check (`PY->TS->PY` and `TS->PY->TS`
-  delegated-chain cases in `scripts/interop.mjs`).
-- **Pure-Python Ed25519 is not constant-time — auto-upgraded when possible.** The
-  zero-dependency reference signer is correct but not hardened against timing
-  side-channels. The Python port now **auto-selects** a hardened native backend
-  when one is importable (`cryptography`, then `PyNaCl`), falling back to pure
-  Python otherwise; `agent_authority.crypto.backend()` reports which is active. Install
-  `cryptography` for constant-time Python in hostile-adjacency deployments. (Node
-  always uses its native, hardened crypto.)
-- **Rate limiting offers two strategies.** The default `MemoryRateStore` is a
-  sliding-count window (max N per window); `TokenBucketRateStore` is now available
-  for **burst shaping** (an initial burst up to the limit, then a steady refill).
-  Both are drop-in for any `RateStore` slot (engine `rate:` or the control plane),
-  and neither counts rejected attempts.
-- **The audit log is an unkeyed hash chain.** It detects edits, reordering, and
-  naive single-record tampering — but a writer with full store access can
-  recompute the chain, and tail deletion alone isn't detectable. Mitigation
-  shipped: `checkpointAudit()` signs the head; store checkpoints out of the
-  writer's reach and `verifyAuditCheckpoint()` detects deletion/rewrites.
-  WORM/append-only storage remains the strongest option.
-- **The `agent` *caveat* is an advisory label** (a string), but cryptographic
-  agent-identity binding now ships: grant/attenuate with `bindAgent` to require a
-  proof of possession of the agent's key at authorize (SVID-style; see "Binding a
-  mandate to an agent identity"). The agent's private key must be provisioned out
-  of band — Behalf enforces the binding but does not distribute keys.
+- **Sharing one control server between separate customers?** Give each customer
+  their own token. Then their logs, policies, revocations, rate counters, and
+  consent requests stay separate. *(Set `tenants: { token: issuerPub }`; admin
+  revocations stay global.)* Without per-customer tokens, treat one server as
+  belonging to a single team — run one server per team.
 
-None of these affect the core security properties (unforgeable, attenuation-only,
-truncation-resistant, offline-verifiable mandates); they are
-durability/scaling/hardening trade-offs.
+- **A shared limit (e.g. "10 emails/hour across all agents") asks the server
+  every time.** That check can't be cached, or agents could cheat past the cap;
+  the server uses *its own clock* so no one can fudge the timing. Everything else
+  — signature, scope, expiry — is checked instantly and offline. *(Revocation can
+  be cached for a few seconds via `CachingRevocationStore`.)*
+
+- **Python and TypeScript fully understand each other.** A permission slip made
+  in one can be used *and* narrowed in the other — they store keys and compute
+  the signed bytes identically. *(Verified both directions in the interop check.)*
+
+- **The pure-Python signer is correct, but the safest version turns on by
+  itself.** On a shared machine, plain-Python signing could leak tiny timing
+  hints; if a hardened crypto library (`cryptography`, then `PyNaCl`) is
+  installed, it's used automatically — `pip install "agent-authority[seal]"` to
+  be sure. *(Node always uses hardened crypto.)*
+
+- **Two ways to enforce rate limits — pick one.** The default counts actions in a
+  rolling time window; `TokenBucketRateStore` instead allows a short burst, then
+  a steady drip. Both drop into the same slot.
+
+- **The logbook (audit) catches tampering, but isn't bulletproof on its own.** It
+  detects edits and reordering, but someone with full write access to the storage
+  could rewrite the whole book. The fix: periodically *sign* the latest page
+  (`checkpointAudit()`) and keep that signature somewhere they can't reach —
+  later, `verifyAuditCheckpoint()` reveals any rewrite or deletion. Write-once
+  storage is the strongest option.
+
+- **The agent's name on a slip is just a label — but you can make it
+  cryptographic.** Add `bindAgent` at grant/attenuate time and the agent must
+  *prove* it owns a secret key to use the slip, so a stolen copy is useless. You
+  hand that key to the agent yourself (Behalf enforces the binding but doesn't
+  distribute keys). See "Binding a mandate to an agent identity".
 
 This implementation has not had an independent cryptographic audit — commission
 one before any 1.0 / production positioning.
