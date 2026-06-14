@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-authority"
-version = "0.1.0"
+version = "0.1.2"
 description = "Authorization for AI agents: verifiable, scoped, revocable capability tokens (mandates) with attenuable delegation, for MCP and A2A. The reference implementation of agent authority — zero-dependency TypeScript & Python."
 readme = "README.md"
 requires-python = ">=3.9"

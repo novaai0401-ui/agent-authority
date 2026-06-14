@@ -38,6 +38,39 @@ Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token that proves *who authorized what, within which limits, and
 through which chain of agents.*
 
+## In plain words
+
+Think of a **Mandate** as a **permission slip** for an AI agent.
+
+Imagine you hire an assistant to run errands for you. You don't hand over your
+wallet and house keys — you write a note: *"You may read my calendar and spend
+up to $50, and only for the next hour."* That note is a Mandate.
+
+The five verbs are just the things you can do with that note:
+
+- **grant** — *write the permission slip.* "This agent may do X, up to this
+  limit, until this time."
+- **authorize** — *check the slip before acting.* The agent must show the slip
+  (and prove it's really theirs) before it's allowed to do something.
+- **attenuate** — *make a smaller copy for a helper.* If the agent asks a
+  sub-agent for help, it can only pass on the same powers or fewer — never more.
+- **revoke** — *tear the slip up.* Cancel it instantly, and every copy handed
+  downstream stops working too.
+- **audit** — *the logbook.* Every check is written down, so you can see exactly
+  what happened.
+
+Two things make the slip safe:
+
+1. **It can't be faked or upgraded.** It's signed with cryptography. A helper
+   can shrink the powers but can never widen them, and nobody can secretly edit
+   it.
+2. **Holding the paper isn't enough.** To use a Mandate, an agent must *prove*
+   it's the rightful holder (it holds a matching secret key). So a stolen copy,
+   by itself, is useless.
+
+That's the whole idea. The rest of this page shows how to do each of these in
+code.
+
 ## Secure an entire agent in ~6 lines
 
 ```ts
@@ -270,23 +303,7 @@ const { ok, reason } = await engine.verifyAuditCheckpoint(cp);
 Because the 5-line API is a facade, the standard can evolve underneath without
 breaking anyone's code.
 
-## Install & develop
-
-```bash
-npm install          # dev deps only (typescript, @types/node)
-npm run build        # compile to dist/
-npm test             # 105 tests across capability/mandate/delegation/revocation/audit/mcp/asymmetric/persist/server/a2a/lint/control-plane/quickstart
-```
-
-Run the reference integrations:
-
-```bash
-npm run example:data-access     # a read-only data agent
-npm run example:spend           # a budget- and rate-limited spend agent
-npm run example:delegation      # two-agent attenuation + cascade revoke
-npm run example:a2a             # agent-to-agent delegation over HTTP
-npm run example:control-plane   # revocation propagation across agents
-```
+## Usage
 
 ### CLI
 
@@ -452,26 +469,6 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 - **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
-## Status
-
-Beyond the initial MVP, this now includes **Ed25519 asymmetric verification**
-(any party verifies offline with just the issuer public key), **file-backed
-persistence** for revocation + audit, a **`agent-authority` CLI**, a **dependency-free
-stdio MCP server**, an **A2A HTTP transport** that carries the verifiable chain
-between agents, **capability linting**, **cross-language wire interop**
-(TS⇄Python mandates verify in either port), and a **control plane** for
-revocation propagation, audit retention, and consent/policy with a dashboard, and
-**dynamic per-surface quickstarts** that wire Behalf into any AI (Claude Code,
-Cursor, Copilot, Gemini, GPT, or a custom surface). CI runs both test suites plus
-the interop check on Node 20/22 and Python 3.9/3.12.
-
-All control-plane state can be file-backed for durability — revocation, audit,
-and now consent + policy (`FileConsentStore`, `FilePolicyStore`); the
-`agent-authority-control-plane` bin persists everything under `$BEHALF_HOME`. The Python
-port has full parity: not just the library and control plane, but the tooling
-too — the `agent-authority` CLI, the `agent-authority-mcp` stdio server, and the quickstart
-generator (`python -m agent_authority.cli`, or the console scripts after `pip install`).
-
 ## Limitations & roadmap
 
 Honest about what this reference implementation does *not* yet do:
@@ -526,26 +523,6 @@ durability/scaling/hardening trade-offs.
 
 This implementation has not had an independent cryptographic audit — commission
 one before any 1.0 / production positioning.
-
-## Publishing
-
-Releases are cut by `.github/workflows/release.yml` on a `v*` tag (every other
-run is a safe dry-run). Both packages publish as **`agent-authority`**.
-
-- **PyPI — Trusted Publishing (no token).** On PyPI, add a *pending publisher*
-  (Account → Publishing): PyPI project `agent-authority`, owner `novaai0401-ui`,
-  repository `agent-authority`, workflow `release.yml`. This authorizes the first
-  publish of a brand-new project over OIDC — no `PYPI_TOKEN` secret, nothing to
-  leak or rotate.
-- **npm.** Add an automation `NPM_TOKEN` as a repository secret
-  (Settings → Secrets and variables → Actions); the workflow publishes with npm
-  provenance.
-
-Then:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0   # triggers the gated publish of both
-```
 
 ## License
 
