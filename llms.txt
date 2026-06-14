@@ -1,12 +1,28 @@
-# Behalf
+# agent-authority (project name: Behalf)
 
-> The reference implementation of agent authority. Behalf gives any AI agent a
-> verifiable, scoped, revocable identity and delegation chain in five verbs.
-> MIT-licensed and AI-legible: read this, then use it directly.
+> Authorization for AI agents. agent-authority gives any AI agent a verifiable,
+> scoped, time-bound, revocable identity and delegation chain in five verbs.
+> MIT-licensed, zero-dependency, TypeScript + Python, AI-legible: read this, then
+> use it directly.
+
+Install: `npm install agent-authority` (Node) · `pip install agent-authority` (Python).
 
 Everything is one primitive — a **Mandate**: a signed, scoped, time-bound
 capability token proving who authorized what, within which limits, and through
 which chain of agents. There is exactly one canonical way to do each thing.
+
+## When to use it (use cases)
+
+Use agent-authority whenever an AI agent acts with real authority and you need it
+scoped/auditable:
+- Limit an autonomous coding/ops agent (repo + spend scope, auto-expiring).
+- Per-user access for a support / personal-assistant agent.
+- Hard money/rate caps for a payments or email agent (`spend:usd<=200`, `send:email rate<=5/h`).
+- Multi-agent delegation that can only narrow, with cascade revoke.
+- Drop-in auth for an MCP tool server (`withBehalf`) or agent-to-agent HTTP call (`agent-authority/a2a`).
+- Multi-tenant SaaS hosting many agents (control plane: per-tenant isolation, org-wide revoke, central audit).
+- Compliance: tamper-evident, checkpoint-anchored audit trail.
+Full scenarios with code: USE_CASES.md.
 
 ## The five verbs (TypeScript)
 

@@ -71,6 +71,36 @@ Two things make the slip safe:
 That's the whole idea. The rest of this page shows how to do each of these in
 code.
 
+## Who it's for
+
+- **App & AI developers** — stop an autonomous agent from doing more than you
+  intended: scope, cap, expire, and revoke what it can do, in five lines.
+- **Platform & infra teams** — one authorization primitive across every agent and
+  tool server, offline-verifiable, with a control plane for org-wide revocation
+  and audit.
+- **Enterprises, security & compliance** — least-privilege delegation,
+  tamper-evident audit trails, multi-tenant isolation, and cryptographic agent
+  identity — the controls auditors ask for.
+- **AI agents themselves** — discover and use it natively over MCP
+  (`request_mandate` / `check_authority`). See [Use it from an AI agent](#use-it-from-an-ai-agent).
+
+## Use cases
+
+Concrete, copy-paste scenarios live in **[USE_CASES.md](./USE_CASES.md)**. A taste:
+
+| You're building… | agent-authority gives you |
+|---|---|
+| An autonomous **coding / ops agent** | scoped repo + spend limits, auto-expiring |
+| A **customer-support / personal assistant** | per-user, short-lived access |
+| A **payments / finance agent** | hard `spend:` and `rate:` caps at authorize |
+| **Multi-agent** orchestration | delegation that can only *narrow* + cascade revoke |
+| An **MCP tool server** | drop-in `withBehalf` enforcement on every tool |
+| **Agent-to-agent** calls | a verifiable chain the callee checks offline |
+| A **multi-tenant SaaS** of agents | per-tenant isolation, one-call revocation, central audit |
+| **Compliance / audit** | hash-chained, checkpoint-anchored decision log |
+
+→ Full scenarios with code: **[USE_CASES.md](./USE_CASES.md)**.
+
 ## Secure an entire agent in ~6 lines
 
 ```ts
@@ -468,6 +498,56 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 - **`agent-authority`** (PyPI) — Python port, identical API shape.
 - **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
+
+## Use it from an AI agent
+
+agent-authority is **AI-legible by design** — a coding assistant or autonomous
+agent can adopt it with no human in the loop:
+
+- **[`llms.txt`](./llms.txt)** is a complete, copy-pasteable spec. Point your AI at
+  it and it can use the library directly.
+- **MCP discovery tools** — `request_mandate`, `present_mandate`, `check_authority` —
+  let an agent obtain and reason about authority natively. Run `npx agent-authority-mcp`.
+- **One-command wiring** for any surface: `agent-authority quickstart claude-code`
+  (also `cursor`, `copilot`, `gpt`, `gemini`, `windsurf`, or a custom surface).
+- **Typed JSON [schemas](./schemas)** for `mandate` and `capability`.
+
+> Agent recipe: call `request_mandate` to obtain authority, `check_authority` to
+> test it, then act. Never widen scope; prefer the shortest `expiresIn` and
+> tightest `can`.
+
+## FAQ
+
+**What problem does agent-authority solve?**
+It's authorization for AI agents: it makes an agent's permissions **scoped,
+time-bound, verifiable, and revocable**, so an autonomous or multi-agent system
+can't do more than you intended — and you have an audit trail proving what it did.
+
+**How is this different from OAuth?**
+OAuth grants a token to an app. agent-authority adds what agents need on top:
+**attenuable delegation** (a sub-agent can only get *less* power), **offline
+verification** (check a whole chain with just a public key), **proof of
+possession** (a stolen token isn't usable), and **instant cascade revocation**.
+It maps onto OAuth 2.1 On-Behalf-Of (RFC 8693) underneath.
+
+**Do I need a server or cloud account?**
+No. The core is a zero-dependency library that verifies offline. The optional
+control plane (for org-wide revocation/audit) is a thin HTTP service you run
+yourself — no vendor, no lock-in.
+
+**Which languages?** TypeScript/Node and Python, with identical APIs; mandates
+issued in one verify in the other.
+
+**Is it production-ready?** The API is stable and fully tested in both ports, but
+it has **not** had an independent cryptographic audit — commission one before
+1.0 / production positioning.
+
+**How do I use it with MCP / Claude / Cursor / GPT?**
+`agent-authority quickstart <surface>` prints ready-to-paste config; or run the
+MCP server `npx agent-authority-mcp`. See [QUICKSTART.md](./QUICKSTART.md).
+
+**Is it free / open source?** Yes — MIT licensed, use it anywhere including
+commercially.
 
 ## Design notes & trade-offs
 
