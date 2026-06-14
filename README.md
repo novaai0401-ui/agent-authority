@@ -469,10 +469,12 @@ child = mandate.attenuate(can=["read:calendar"], expires_in="10m")
 - **MCP server + `llms.txt` + typed schemas** — the agent-adoption kit.
 - **Three reference integrations** — data-access, spend-limited, two-agent delegation.
 
-## Limitations & roadmap
+## Design notes & trade-offs
 
-Honest, in plain words, about the trade-offs (none of these weaken the core
-guarantees — they're about scale, storage, and deployment):
+How it behaves at scale, in plain words — the deliberate trade-offs and the
+knobs for each. None of these weaken the core guarantees (unforgeable,
+attenuation-only, truncation-resistant, offline-verifiable mandates); they're
+about scale, storage, and deployment, and each ships with a built-in option:
 
 - **Sharing one control server between separate customers?** Give each customer
   their own token. Then their logs, policies, revocations, rate counters, and

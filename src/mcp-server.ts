@@ -54,7 +54,7 @@ export function createMcpServer(engine: Behalf = Behalf.default): McpServer {
         return ok({
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: {} },
-          serverInfo: { name: "agent-authority", version: "0.1.4" },
+          serverInfo: { name: "agent-authority", version: "0.1.5" },
         });
 
       case "notifications/initialized":
